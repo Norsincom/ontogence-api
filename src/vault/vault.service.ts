@@ -1,19 +1,21 @@
 import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
-import { createClient } from '@supabase/supabase-js';
+import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { PrismaService } from '../prisma/prisma.service';
 import { v4 as uuidv4 } from 'uuid';
 import * as crypto from 'crypto';
-
-const supabase = createClient(
-  process.env.SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!,
-);
 
 const BUCKET = 'vault';
 
 @Injectable()
 export class VaultService {
-  constructor(private prisma: PrismaService) {}
+  private supabase: SupabaseClient;
+
+  constructor(private prisma: PrismaService) {
+    this.supabase = createClient(
+      process.env.SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    );
+  }
 
   async getFiles(userId: string, category?: string) {
     return this.prisma.upload.findMany({
@@ -26,7 +28,7 @@ export class VaultService {
     const ext = fileName.split('.').pop();
     const storageKey = `${userId}/${category}/${uuidv4()}.${ext}`;
 
-    const { data, error } = await supabase.storage
+    const { data, error } = await this.supabase.storage
       .from(BUCKET)
       .createSignedUploadUrl(storageKey);
 
@@ -48,7 +50,7 @@ export class VaultService {
     category: string,
     notes?: string,
   ) {
-    const { data } = await supabase.storage.from(BUCKET).getPublicUrl(storageKey);
+    const { data } = await this.supabase.storage.from(BUCKET).getPublicUrl(storageKey);
     const storageUrl = data.publicUrl;
     const sha256Hash = crypto.createHash('sha256').update(storageKey + Date.now()).digest('hex');
 
@@ -92,7 +94,7 @@ export class VaultService {
       throw new ForbiddenException('Access denied');
     }
 
-    const { data, error } = await supabase.storage
+    const { data, error } = await this.supabase.storage
       .from(BUCKET)
       .createSignedUrl(file.storageKey, 3600); // 1 hour
 
@@ -123,7 +125,7 @@ export class VaultService {
     if (!file) throw new NotFoundException('File not found');
     if (file.userId !== userId) throw new ForbiddenException('Access denied');
 
-    await supabase.storage.from(BUCKET).remove([file.storageKey]);
+    await this.supabase.storage.from(BUCKET).remove([file.storageKey]);
     await this.prisma.upload.delete({ where: { id: fileId } });
 
     await this.prisma.auditLog.create({
