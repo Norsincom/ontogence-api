@@ -12,6 +12,7 @@ import { AdminModule } from './admin/admin.module';
 import { StripeModule } from './stripe/stripe.module';
 import { WebhooksModule } from './webhooks/webhooks.module';
 import { EmailModule } from './email/email.module';
+import { HealthModule } from './health/health.module';
 
 @Module({
   imports: [
@@ -28,6 +29,7 @@ import { EmailModule } from './email/email.module';
     StripeModule,
     WebhooksModule,
     EmailModule,
+    HealthModule,
   ],
 })
 export class AppModule {}
