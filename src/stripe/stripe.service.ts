@@ -1,9 +1,18 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import Stripe from 'stripe';
 import { PrismaService } from '../prisma/prisma.service';
 import { v4 as uuidv4 } from 'uuid';
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || '', { apiVersion: '2025-02-24.acacia' as any });
+function createStripeClient(): Stripe | null {
+  const key = process.env.STRIPE_SECRET_KEY;
+  if (!key) {
+    new Logger('StripeService').warn('STRIPE_SECRET_KEY not set — Stripe features disabled');
+    return null;
+  }
+  return new Stripe(key, { apiVersion: '2025-02-24.acacia' as any });
+}
+
+const stripe = createStripeClient();
 
 export const PRODUCTS = {
   registration: {
@@ -34,6 +43,7 @@ export class StripeService {
   ) {
     const product = PRODUCTS[productKey];
 
+    if (!stripe) throw new Error('Stripe is not configured');
     const session = await stripe.checkout.sessions.create({
       mode: 'payment',
       customer_email: userEmail,
@@ -116,6 +126,7 @@ export class StripeService {
   }
 
   constructEvent(payload: Buffer, signature: string) {
+    if (!stripe) throw new Error('Stripe is not configured');
     return stripe.webhooks.constructEvent(payload, signature, process.env.STRIPE_WEBHOOK_SECRET || '');
   }
 }
