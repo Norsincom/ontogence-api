@@ -16,16 +16,47 @@ const stripe = createStripeClient();
 
 export const PRODUCTS = {
   registration: {
-    name: 'Ontogence Registration Fee',
-    priceId: process.env.STRIPE_REGISTRATION_PRICE_ID || '',
-    amount: 25000, // $250 CAD in cents
+    name: 'Registration',
+    priceId: 'price_1TViA8FJhxAto4oEmDf5PmxS',
+    amount: 25000,
     currency: 'cad',
   },
   protocol: {
-    name: 'Personalised Protocol Delivery',
-    priceId: process.env.STRIPE_PROTOCOL_PRICE_ID || '',
-    amount: 65000, // $650 CAD in cents
+    name: 'Initial Protocol',
+    priceId: 'price_1TViBRFJhxAto4oEvYCaUk2o',
+    amount: 65000,
     currency: 'cad',
+  },
+  protocolRevision: {
+    name: 'Protocol Revision',
+    priceId: 'price_1TViKKFJhxAto4oEaBAF0eqI',
+    amount: 27500,
+    currency: 'cad',
+  },
+  monitoring3Month: {
+    name: '3-Month Monitoring',
+    priceId: 'price_1TViKnFJhxAto4oE0BtqlA2n',
+    amount: 150000,
+    currency: 'cad',
+  },
+  monitoring6Month: {
+    name: '6-Month Monitoring',
+    priceId: 'price_1TViLaFJhxAto4oEbgjJ5kOy',
+    amount: 250000,
+    currency: 'cad',
+  },
+  monitoring12Month: {
+    name: '12-Month Monitoring',
+    priceId: 'price_1TViM6FJhxAto4oE2AmkUvWx',
+    amount: 500000,
+    currency: 'cad',
+  },
+  vaultAccess: {
+    name: 'Vault Access',
+    priceId: 'price_1TViNcFJhxAto4oE481iBBtA',
+    amount: 500,
+    currency: 'cad',
+    recurring: true,
   },
 };
 
