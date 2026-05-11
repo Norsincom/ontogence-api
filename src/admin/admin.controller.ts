@@ -60,4 +60,18 @@ export class AdminController {
   ) {
     return this.adminService.getAuditLogs(+page, +limit, userId);
   }
+
+  @Get('users/:id/notes')
+  getClientNotes(@Param('id') id: string) {
+    return this.adminService.getClientNotes(id);
+  }
+
+  @Post('users/:id/notes')
+  addClientNote(
+    @CurrentUser() admin: any,
+    @Param('id') id: string,
+    @Body() body: { note: string },
+  ) {
+    return this.adminService.addClientNote(id, admin.id, body.note);
+  }
 }
