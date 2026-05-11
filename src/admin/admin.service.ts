@@ -119,4 +119,24 @@ export class AdminService {
       select: { id: true, name: true, email: true, role: true },
     });
   }
+
+  async getClientNotes(clientId: string) {
+    return this.prisma.adminNote.findMany({
+      where: { clientId },
+      include: { author: { select: { id: true, name: true, email: true } } },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  async addClientNote(clientId: string, authorId: string, note: string) {
+    return this.prisma.adminNote.create({
+      data: {
+        id: uuidv4(),
+        clientId,
+        authorId,
+        note,
+      },
+      include: { author: { select: { id: true, name: true, email: true } } },
+    });
+  }
 }
