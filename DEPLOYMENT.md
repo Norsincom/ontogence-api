@@ -29,11 +29,11 @@ Email                   →  Resend
 |-----|-------|
 | `NODE_ENV` | `production` |
 | `PORT` | `3001` |
-| `DATABASE_URL` | `postgresql://postgres.treeujtluzsfoktsrwlr:[PASSWORD]@aws-0-us-west-1.pooler.supabase.com:6543/postgres?pgbouncer=true` |
-| `DIRECT_URL` | `postgresql://postgres:[PASSWORD]@db.treeujtluzsfoktsrwlr.supabase.co:5432/postgres` |
-| `CLERK_SECRET_KEY` | `sk_live_TMVJ2oKtwWWyKyHp0fWBx1np3gbxpDBqzx1He41g5K` |
+| `DATABASE_URL` | `postgresql://postgres.treeujtluzsfoktsrwlr:[DB_PASSWORD]@aws-0-us-west-1.pooler.supabase.com:6543/postgres?pgbouncer=true` |
+| `DIRECT_URL` | `postgresql://postgres:[DB_PASSWORD]@db.treeujtluzsfoktsrwlr.supabase.co:5432/postgres` |
+| `CLERK_SECRET_KEY` | `[CLERK_SECRET_KEY - stored in Render env vars]` |
 | `CLERK_WEBHOOK_SECRET` | *(from Clerk Dashboard → Webhooks, after creating endpoint)* |
-| `STRIPE_SECRET_KEY` | *(live key from Stripe Dashboard)* |
+| `STRIPE_SECRET_KEY` | `[STRIPE_SECRET_KEY - stored in Render env vars]` |
 | `STRIPE_WEBHOOK_SECRET` | *(from Stripe Dashboard → Developers → Webhooks)* |
 | `RESEND_API_KEY` | `re_F6B2Lgvg_8JmPxQcX727jq5kJpUurEsaR` |
 | `SUPABASE_URL` | `https://treeujtluzsfoktsrwlr.supabase.co` |
@@ -55,9 +55,9 @@ Email                   →  Resend
 | Key | Value |
 |-----|-------|
 | `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` | `pk_live_Y2xlcmsub250b2dlbmNlLmNvbSQ` |
-| `CLERK_SECRET_KEY` | `sk_live_TMVJ2oKtwWWyKyHp0fWBx1np3gbxpDBqzx1He41g5K` |
+| `CLERK_SECRET_KEY` | `[CLERK_SECRET_KEY - stored in Render env vars]` |
 | `NEXT_PUBLIC_API_URL` | `https://ontogence-api.onrender.com` *(update after Render deploy)* |
-| `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` | *(live publishable key from Stripe)* |
+| `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` | `[STRIPE_PUBLISHABLE_KEY - stored in Vercel env vars]` |
 
 ### Custom Domain
 1. Vercel → Project → Settings → Domains

@@ -4,8 +4,8 @@ services:
     runtime: node
     region: oregon
     plan: starter
-    buildCommand: pnpm install && npx prisma generate && pnpm build
-    startCommand: node dist/main.js
+    buildCommand: pnpm install && ./node_modules/.bin/prisma generate && pnpm build
+    startCommand: node dist/main
     healthCheckPath: /health
     envVars:
       - key: NODE_ENV
