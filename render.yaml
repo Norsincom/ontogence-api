@@ -6,7 +6,7 @@ services:
     plan: starter
     buildCommand: pnpm install && ./node_modules/.bin/prisma generate && pnpm build
     startCommand: node dist/main
-    healthCheckPath: /health
+    healthCheckPath: /api/health
     envVars:
       - key: NODE_ENV
         value: production
