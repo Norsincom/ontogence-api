@@ -9,10 +9,31 @@ export class UsersService {
   async getProfile(userId: string) {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
-      include: { profile: true },
+      include: {
+        profile: true,
+        subscriptions: {
+          where: { status: 'active' },
+          orderBy: { createdAt: 'desc' },
+          take: 1,
+        },
+        invoices: {
+          orderBy: { createdAt: 'desc' },
+          take: 50,
+        },
+      },
     });
     if (!user) throw new NotFoundException('User not found');
-    return user;
+
+    const hasVaultAccess = user.subscriptions.length > 0;
+    const purchasedServices = user.invoices
+      .filter(inv => inv.status === 'paid')
+      .map(inv => inv.description);
+
+    return {
+      ...user,
+      hasVaultAccess,
+      purchasedServices,
+    };
   }
 
   async updateProfile(userId: string, dto: UpdateProfileDto) {
