@@ -9,6 +9,8 @@ import { createClerkClient, verifyToken } from '@clerk/backend';
 import { PrismaService } from '../../prisma/prisma.service';
 import { IS_PUBLIC_KEY } from '../decorators/public.decorator';
 
+const SUPER_ADMIN_EMAIL = 'admin@ontogence.com';
+
 const clerkClient = createClerkClient({
   secretKey: process.env.CLERK_SECRET_KEY,
 });
@@ -51,6 +53,9 @@ export class ClerkAuthGuard implements CanActivate {
         const email = clerkUser.emailAddresses[0]?.emailAddress || '';
         const name = [clerkUser.firstName, clerkUser.lastName].filter(Boolean).join(' ') || null;
 
+        // Auto-assign super_admin role for the designated admin email
+        const role = email === SUPER_ADMIN_EMAIL ? 'super_admin' : 'client';
+
         user = await this.prisma.user.create({
           data: {
             id: clerkId,
@@ -58,7 +63,16 @@ export class ClerkAuthGuard implements CanActivate {
             email,
             name,
             avatarUrl: clerkUser.imageUrl || null,
+            role: role as any,
+            // Super admin skips onboarding
+            onboardingDone: email === SUPER_ADMIN_EMAIL,
           },
+        });
+      } else if (user.email === SUPER_ADMIN_EMAIL && user.role !== 'super_admin') {
+        // Promote existing admin@ontogence.com user to super_admin if not already
+        user = await this.prisma.user.update({
+          where: { id: user.id },
+          data: { role: 'super_admin', onboardingDone: true },
         });
       }
 

@@ -42,4 +42,10 @@ export class MessagingController {
   getUnread(@CurrentUser() user: any) {
     return this.messagingService.getUnreadCount(user.id);
   }
+
+  /** Returns the super_admin user info so clients can initiate a conversation */
+  @Get('admin-user')
+  getAdminUser() {
+    return this.messagingService.getAdminUser();
+  }
 }
