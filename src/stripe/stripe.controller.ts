@@ -26,6 +26,28 @@ export class StripeController {
     );
   }
 
+  @Post('cart-checkout')
+  @ApiBearerAuth()
+  createCartCheckout(
+    @CurrentUser() user: any,
+    @Body() body: { products: string[]; successUrl: string; cancelUrl: string },
+  ) {
+    return this.stripeService.createCartCheckoutSession(
+      user.id,
+      user.email,
+      user.name || '',
+      body.products as any[],
+      body.successUrl,
+      body.cancelUrl,
+    );
+  }
+
+  @Get('subscription')
+  @ApiBearerAuth()
+  getSubscription(@CurrentUser() user: any) {
+    return this.stripeService.getSubscriptionStatus(user.id);
+  }
+
   @Get('invoices')
   @ApiBearerAuth()
   getInvoices(@CurrentUser() user: any) {
