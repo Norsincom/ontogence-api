@@ -225,7 +225,11 @@ export class StripeService {
     });
   }
 
-  async getSubscriptionStatus(userId: string) {
+  async getSubscriptionStatus(userId: string, userRole?: string) {
+    // Super admins always have full vault access without a subscription
+    if (userRole === 'super_admin') {
+      return { hasVaultAccess: true, subscription: null };
+    }
     const sub = await this.prisma.subscription.findFirst({
       where: { userId, status: 'active' },
       orderBy: { createdAt: 'desc' },

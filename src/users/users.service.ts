@@ -24,7 +24,8 @@ export class UsersService {
     });
     if (!user) throw new NotFoundException('User not found');
 
-    const hasVaultAccess = user.subscriptions.length > 0;
+    // Super admins always have full vault access
+    const hasVaultAccess = user.role === 'super_admin' || user.subscriptions.length > 0;
     const purchasedServices = user.invoices
       .filter(inv => inv.status === 'paid')
       .map(inv => inv.description);

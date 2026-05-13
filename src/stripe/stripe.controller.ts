@@ -45,7 +45,7 @@ export class StripeController {
   @Get('subscription')
   @ApiBearerAuth()
   getSubscription(@CurrentUser() user: any) {
-    return this.stripeService.getSubscriptionStatus(user.id);
+    return this.stripeService.getSubscriptionStatus(user.id, user.role);
   }
 
   @Get('invoices')

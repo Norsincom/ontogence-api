@@ -135,4 +135,13 @@ export class MessagingService {
     });
     return { count };
   }
+
+  /** Returns the super_admin user so clients can auto-create a conversation with them */
+  async getAdminUser() {
+    const admin = await this.prisma.user.findFirst({
+      where: { role: 'super_admin' },
+      select: { id: true, name: true, email: true, avatarUrl: true },
+    });
+    return admin;
+  }
 }
