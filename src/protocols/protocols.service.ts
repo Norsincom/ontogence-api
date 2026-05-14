@@ -6,7 +6,17 @@ import { v4 as uuidv4 } from 'uuid';
 export class ProtocolsService {
   constructor(private prisma: PrismaService) {}
 
-  async getMyProtocols(userId: string) {
+  private async hasVaultAccess(userId: string, userRole: string): Promise<boolean> {
+    if (['admin', 'super_admin', 'consultant'].includes(userRole)) return true;
+    const sub = await this.prisma.subscription.findFirst({
+      where: { userId, status: 'active' },
+    });
+    return !!sub;
+  }
+
+  async getMyProtocols(userId: string, userRole: string = 'user') {
+    const hasAccess = await this.hasVaultAccess(userId, userRole);
+    if (!hasAccess) return [];
     return this.prisma.protocol.findMany({
       where: { clientId: userId },
       include: {
