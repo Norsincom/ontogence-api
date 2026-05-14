@@ -53,7 +53,14 @@ export class ProtocolsService {
     return protocol;
   }
 
-  async createProtocol(adminId: string, clientId: string, title: string, content: string) {
+  async createProtocol(
+    adminId: string,
+    clientId: string,
+    title: string,
+    content: string,
+    adminRole?: string,
+    adminName?: string,
+  ) {
     const protocol = await this.prisma.protocol.create({
       data: {
         id: uuidv4(),
@@ -63,6 +70,13 @@ export class ProtocolsService {
         status: 'draft',
         currentVersion: 1,
         updatedAt: new Date(),
+        // Attribution
+        createdByUserId: adminId,
+        createdByRole: adminRole || 'admin',
+        createdByName: adminName || null,
+        updatedByUserId: adminId,
+        updatedByRole: adminRole || 'admin',
+        updatedByName: adminName || null,
       },
     });
 
@@ -72,6 +86,10 @@ export class ProtocolsService {
         protocolId: protocol.id,
         version: 1,
         content,
+        // Attribution snapshot on version
+        createdByUserId: adminId,
+        createdByRole: adminRole || 'admin',
+        createdByName: adminName || null,
       },
     });
 
@@ -82,20 +100,33 @@ export class ProtocolsService {
         action: 'protocol_created',
         resourceType: 'protocol',
         resourceId: protocol.id,
-        metadata: { clientId, title },
+        metadata: {
+          clientId,
+          title,
+          createdByRole: adminRole || 'admin',
+          createdByName: adminName || null,
+        },
       },
     });
 
     return protocol;
   }
 
-  async deliverProtocol(protocolId: string, adminId: string) {
+  async deliverProtocol(protocolId: string, adminId: string, adminRole?: string, adminName?: string) {
     const protocol = await this.prisma.protocol.findUnique({ where: { id: protocolId } });
     if (!protocol) throw new NotFoundException('Protocol not found');
 
     const updated = await this.prisma.protocol.update({
       where: { id: protocolId },
-      data: { status: 'delivered', deliveredAt: new Date(), updatedAt: new Date() },
+      data: {
+        status: 'delivered',
+        deliveredAt: new Date(),
+        updatedAt: new Date(),
+        // Attribution
+        updatedByUserId: adminId,
+        updatedByRole: adminRole || 'admin',
+        updatedByName: adminName || null,
+      },
     });
 
     await this.prisma.timelineEvent.create({
@@ -107,6 +138,10 @@ export class ProtocolsService {
         title: `Protocol Delivered: ${protocol.title}`,
         description: 'Your personalised protocol has been delivered.',
         occurredAt: new Date(),
+        // Attribution
+        createdByUserId: adminId,
+        createdByRole: adminRole || 'admin',
+        createdByName: adminName || null,
       },
     });
 
@@ -117,13 +152,24 @@ export class ProtocolsService {
         action: 'protocol_delivered',
         resourceType: 'protocol',
         resourceId: protocolId,
+        metadata: {
+          updatedByRole: adminRole || 'admin',
+          updatedByName: adminName || null,
+        },
       },
     });
 
     return updated;
   }
 
-  async addVersion(protocolId: string, adminId: string, content: string, notes?: string) {
+  async addVersion(
+    protocolId: string,
+    adminId: string,
+    content: string,
+    notes?: string,
+    adminRole?: string,
+    adminName?: string,
+  ) {
     const protocol = await this.prisma.protocol.findUnique({ where: { id: protocolId } });
     if (!protocol) throw new NotFoundException('Protocol not found');
 
@@ -136,12 +182,24 @@ export class ProtocolsService {
         version: newVersion,
         content,
         notes: notes || null,
+        // Attribution snapshot
+        createdByUserId: adminId,
+        createdByRole: adminRole || 'admin',
+        createdByName: adminName || null,
       },
     });
 
     return this.prisma.protocol.update({
       where: { id: protocolId },
-      data: { currentVersion: newVersion, status: 'updated', updatedAt: new Date() },
+      data: {
+        currentVersion: newVersion,
+        status: 'updated',
+        updatedAt: new Date(),
+        // Attribution
+        updatedByUserId: adminId,
+        updatedByRole: adminRole || 'admin',
+        updatedByName: adminName || null,
+      },
     });
   }
 }

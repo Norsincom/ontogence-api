@@ -21,7 +21,7 @@ export class MonitoringController {
 
   @Post('biomarkers')
   addBiomarker(@CurrentUser() user: any, @Body() body: any) {
-    return this.monitoringService.addBiomarker(user.id, body);
+    return this.monitoringService.addBiomarker(user.id, body, user.id, user.role, user.name);
   }
 
   @Get('symptoms')

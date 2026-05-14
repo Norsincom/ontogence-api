@@ -57,6 +57,7 @@ export class MessagingService {
     attachmentKey?: string,
     attachmentUrl?: string,
     attachmentName?: string,
+    senderName?: string,
   ) {
     const conv = await this.prisma.conversation.findUnique({ where: { id: conversationId } });
     if (!conv) throw new NotFoundException('Conversation not found');
@@ -73,6 +74,9 @@ export class MessagingService {
         attachmentKey: attachmentKey || null,
         attachmentUrl: attachmentUrl || null,
         attachmentName: attachmentName || null,
+        // Attribution snapshot — immutable at send time
+        senderRole: role,
+        senderName: senderName || null,
       },
       include: { sender: { select: { id: true, name: true, avatarUrl: true } } },
     });
@@ -89,6 +93,10 @@ export class MessagingService {
         action: 'message_sent',
         resourceType: 'conversation',
         resourceId: conversationId,
+        metadata: {
+          senderRole: role,
+          senderName: senderName || null,
+        },
       },
     });
 

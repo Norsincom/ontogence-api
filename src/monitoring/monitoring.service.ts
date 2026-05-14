@@ -13,10 +13,16 @@ export class MonitoringService {
     });
   }
 
-  async addBiomarker(userId: string, data: {
-    panel: string; marker: string; value: number; unit: string;
-    referenceMin?: number; referenceMax?: number; loggedAt: string; source?: string; notes?: string;
-  }) {
+  async addBiomarker(
+    userId: string,
+    data: {
+      panel: string; marker: string; value: number; unit: string;
+      referenceMin?: number; referenceMax?: number; loggedAt: string; source?: string; notes?: string;
+    },
+    createdByUserId?: string,
+    createdByRole?: string,
+    createdByName?: string,
+  ) {
     const isAbnormal =
       (data.referenceMin !== undefined && data.value < data.referenceMin) ||
       (data.referenceMax !== undefined && data.value > data.referenceMax);
@@ -35,6 +41,10 @@ export class MonitoringService {
         loggedAt: new Date(data.loggedAt),
         source: data.source ?? null,
         notes: data.notes ?? null,
+        // Attribution
+        createdByUserId: createdByUserId || userId,
+        createdByRole: createdByRole || 'client',
+        createdByName: createdByName || null,
       },
     });
   }
