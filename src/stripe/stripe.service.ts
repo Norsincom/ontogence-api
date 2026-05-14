@@ -46,14 +46,7 @@ export const PRODUCTS = {
   monitoring6Month: {
     name: '6-Month Monitoring',
     priceId: 'price_1TViLaFJhxAto4oEbgjJ5kOy',
-    amount: 250000,
-    currency: 'cad',
-    recurring: false,
-  },
-  monitoring12Month: {
-    name: '12-Month Monitoring',
-    priceId: 'price_1TViM6FJhxAto4oE2AmkUvWx',
-    amount: 500000,
+    amount: 280000,
     currency: 'cad',
     recurring: false,
   },
