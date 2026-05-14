@@ -50,8 +50,13 @@ export class VaultController {
     return this.vaultService.getDownloadUrl(user.id, id, user.id, user.role);
   }
 
-  @Delete(':id')
-  deleteFile(@CurrentUser() user: any, @Param('id') id: string) {
-    return this.vaultService.deleteFile(user.id, id);
+  /**
+   * Archive endpoint — admin/super_admin only.
+   * Clients do NOT have a delete endpoint. Any attempt to call
+   * DELETE /vault/:id will return 404 (route does not exist).
+   */
+  @Delete(':id/archive')
+  archiveFile(@CurrentUser() user: any, @Param('id') id: string) {
+    return this.vaultService.archiveFile(user.id, user.role, id);
   }
 }

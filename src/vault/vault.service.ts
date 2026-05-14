@@ -19,7 +19,11 @@ export class VaultService {
 
   async getFiles(userId: string, category?: string) {
     return this.prisma.upload.findMany({
-      where: { userId, ...(category ? { category: category as any } : {}) },
+      where: {
+        userId,
+        archivedAt: null, // never show archived files to clients
+        ...(category ? { category: category as any } : {}),
+      },
       orderBy: { uploadedAt: 'desc' },
     });
   }
@@ -70,7 +74,6 @@ export class VaultService {
       },
     });
 
-    // Audit log
     await this.prisma.auditLog.create({
       data: {
         id: uuidv4(),
@@ -89,6 +92,11 @@ export class VaultService {
     const file = await this.prisma.upload.findUnique({ where: { id: fileId } });
     if (!file) throw new NotFoundException('File not found');
 
+    // Archived files are only accessible to admins
+    if (file.archivedAt && !['admin', 'super_admin'].includes(requestingRole)) {
+      throw new ForbiddenException('File has been archived');
+    }
+
     // Only owner, consultant assigned to client, or admin can download
     if (file.userId !== requestingUserId && !['admin', 'super_admin', 'consultant'].includes(requestingRole)) {
       throw new ForbiddenException('Access denied');
@@ -96,17 +104,15 @@ export class VaultService {
 
     const { data, error } = await this.supabase.storage
       .from(BUCKET)
-      .createSignedUrl(file.storageKey, 3600); // 1 hour
+      .createSignedUrl(file.storageKey, 3600);
 
     if (error) throw new Error(`Storage error: ${error.message}`);
 
-    // Update accessed timestamp
     await this.prisma.upload.update({
       where: { id: fileId },
       data: { accessedAt: new Date() },
     });
 
-    // Audit
     await this.prisma.auditLog.create({
       data: {
         id: uuidv4(),
@@ -120,22 +126,43 @@ export class VaultService {
     return { url: data.signedUrl, fileName: file.originalName };
   }
 
-  async deleteFile(userId: string, fileId: string) {
+  /**
+   * Archive a file (soft-delete). Clients CANNOT call this.
+   * Only admin/super_admin roles are permitted.
+   * Hard-delete from storage is reserved for super_admin only.
+   */
+  async archiveFile(requestingUserId: string, requestingRole: string, fileId: string) {
+    if (!['admin', 'super_admin'].includes(requestingRole)) {
+      throw new ForbiddenException('Only administrators can archive files');
+    }
+
     const file = await this.prisma.upload.findUnique({ where: { id: fileId } });
     if (!file) throw new NotFoundException('File not found');
-    if (file.userId !== userId) throw new ForbiddenException('Access denied');
 
-    await this.supabase.storage.from(BUCKET).remove([file.storageKey]);
-    await this.prisma.upload.delete({ where: { id: fileId } });
+    if (requestingRole === 'super_admin') {
+      // Super admin: hard-delete from storage AND soft-delete record
+      await this.supabase.storage.from(BUCKET).remove([file.storageKey]);
+    }
+
+    await this.prisma.upload.update({
+      where: { id: fileId },
+      data: {
+        archivedAt: new Date(),
+        archivedById: requestingUserId,
+      },
+    });
 
     await this.prisma.auditLog.create({
       data: {
         id: uuidv4(),
-        userId,
+        userId: requestingUserId,
         action: 'upload_deleted',
         resourceType: 'upload',
         resourceId: fileId,
-        metadata: { fileName: file.originalName },
+        metadata: {
+          fileName: file.originalName,
+          action: requestingRole === 'super_admin' ? 'hard_delete' : 'soft_archive',
+        },
       },
     });
 
