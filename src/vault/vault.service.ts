@@ -53,6 +53,10 @@ export class VaultService {
     sizeBytes: number,
     category: string,
     notes?: string,
+    // Attribution fields
+    createdByUserId?: string,
+    createdByRole?: string,
+    createdByName?: string,
   ) {
     const { data } = await this.supabase.storage.from(BUCKET).getPublicUrl(storageKey);
     const storageUrl = data.publicUrl;
@@ -71,6 +75,10 @@ export class VaultService {
         storageUrl,
         sha256Hash,
         notes: notes || null,
+        // Attribution — captured server-side, immutable after creation
+        createdByUserId: createdByUserId || userId,
+        createdByRole: createdByRole || 'client',
+        createdByName: createdByName || null,
       },
     });
 
@@ -81,7 +89,12 @@ export class VaultService {
         action: 'upload_created',
         resourceType: 'upload',
         resourceId: upload.id,
-        metadata: { fileName: originalName, category },
+        metadata: {
+          fileName: originalName,
+          category,
+          createdByRole: createdByRole || 'client',
+          createdByName: createdByName || null,
+        },
       },
     });
 
@@ -149,6 +162,8 @@ export class VaultService {
       data: {
         archivedAt: new Date(),
         archivedById: requestingUserId,
+        updatedByUserId: requestingUserId,
+        updatedByRole: requestingRole,
       },
     });
 

@@ -12,7 +12,7 @@ export class ProtocolsController {
 
   @Get()
   getMyProtocols(@CurrentUser() user: any) {
-    return this.protocolsService.getMyProtocols(user.id);
+    return this.protocolsService.getMyProtocols(user.id, user.role);
   }
 
   @Get(':id')
@@ -26,13 +26,20 @@ export class ProtocolsController {
     @CurrentUser() user: any,
     @Body() body: { clientId: string; title: string; content: string },
   ) {
-    return this.protocolsService.createProtocol(user.id, body.clientId, body.title, body.content);
+    return this.protocolsService.createProtocol(
+      user.id,
+      body.clientId,
+      body.title,
+      body.content,
+      user.role,
+      user.name,
+    );
   }
 
   @Patch(':id/deliver')
   @Roles('admin', 'super_admin')
   deliverProtocol(@CurrentUser() user: any, @Param('id') id: string) {
-    return this.protocolsService.deliverProtocol(id, user.id);
+    return this.protocolsService.deliverProtocol(id, user.id, user.role, user.name);
   }
 
   @Post(':id/versions')
@@ -42,6 +49,6 @@ export class ProtocolsController {
     @Param('id') id: string,
     @Body() body: { content: string; notes?: string },
   ) {
-    return this.protocolsService.addVersion(id, user.id, body.content, body.notes);
+    return this.protocolsService.addVersion(id, user.id, body.content, body.notes, user.role, user.name);
   }
 }

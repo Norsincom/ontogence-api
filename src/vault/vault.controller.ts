@@ -42,6 +42,10 @@ export class VaultController {
       body.sizeBytes,
       body.category,
       body.notes,
+      // Attribution — sourced from the authenticated user, not from the request body
+      user.id,
+      user.role,
+      user.name,
     );
   }
 

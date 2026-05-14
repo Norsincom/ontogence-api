@@ -35,7 +35,7 @@ export class MessagingController {
     @Param('id') id: string,
     @Body() body: { body: string; attachmentKey?: string; attachmentUrl?: string; attachmentName?: string },
   ) {
-    return this.messagingService.sendMessage(id, user.id, body.body, user.role, body.attachmentKey, body.attachmentUrl, body.attachmentName);
+    return this.messagingService.sendMessage(id, user.id, body.body, user.role, body.attachmentKey, body.attachmentUrl, body.attachmentName, user.name);
   }
 
   @Get('unread')
