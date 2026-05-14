@@ -173,10 +173,13 @@ model Upload {
   isImmutable     Boolean         @default(true)
   uploadedAt      DateTime        @default(now())
   accessedAt      DateTime?
+  archivedAt      DateTime?
+  archivedById    String?
   notes           String?
 
   @@index([userId])
   @@index([category])
+  @@index([archivedAt])
   @@map("uploads")
 }
 
