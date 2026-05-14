@@ -35,9 +35,22 @@ export class AdminController {
     return this.adminService.updateClientProfile(id, admin.id, admin.role, body);
   }
 
+  /**
+   * ROLE CHANGE — SUPER_ADMIN ONLY
+   *
+   * Governance rules enforced here AND in the service layer:
+   * - Only super_admin may call this endpoint (@Roles('super_admin'))
+   * - The service additionally prevents: assigning super_admin, modifying admin@ontogence.com
+   * - Full audit trail logged on every successful change
+   */
   @Patch('users/:id/role')
-  updateRole(@CurrentUser() admin: any, @Param('id') id: string, @Body() body: { role: string }) {
-    return this.adminService.updateUserRole(id, body.role as any, admin.id);
+  @Roles('super_admin')
+  updateRole(
+    @CurrentUser() admin: any,
+    @Param('id') id: string,
+    @Body() body: { role: string },
+  ) {
+    return this.adminService.updateUserRole(id, body.role as any, admin.id, admin.role);
   }
 
   // File management

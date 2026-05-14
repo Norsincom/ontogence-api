@@ -1,5 +1,6 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { v4 as uuidv4 } from 'uuid';
 
 @Injectable()
 export class AuthService {
@@ -25,19 +26,33 @@ export class AuthService {
     });
   }
 
+  /**
+   * GOVERNANCE: Self-service role assignment during onboarding is restricted.
+   * Users may ONLY set their own role to 'client'.
+   * Elevated roles (consultant, admin, super_admin) cannot be self-assigned.
+   * Role elevation is exclusively a super_admin operation via /admin/users/:id/role.
+   */
   async setOnboardingRole(userId: string, role: string, consents?: string[]) {
-    const validRoles = ['client', 'consultant', 'admin', 'super_admin'];
-    const safeRole = validRoles.includes(role) ? role : 'client';
+    // Only 'client' is allowed for self-service onboarding
+    const allowedSelfServiceRoles = ['client'];
+
+    if (!allowedSelfServiceRoles.includes(role)) {
+      throw new ForbiddenException(
+        'Role elevation is not permitted during onboarding. Contact your administrator to assign elevated roles.',
+      );
+    }
+
     const updated = await this.prisma.user.update({
       where: { id: userId },
-      data: { role: safeRole as any, onboardingDone: true, updatedAt: new Date() },
+      data: { role: 'client', onboardingDone: true, updatedAt: new Date() },
     });
+
     if (consents && consents.length > 0) {
       for (const documentType of consents) {
         await this.prisma.consentRecord.upsert({
           where: { userId_documentType: { userId, documentType } },
           create: {
-            id: require('uuid').v4(),
+            id: uuidv4(),
             userId,
             documentType,
             documentVersion: '1.0',
@@ -46,6 +61,7 @@ export class AuthService {
         });
       }
     }
+
     return { success: true, role: updated.role, onboardingComplete: true };
   }
 }

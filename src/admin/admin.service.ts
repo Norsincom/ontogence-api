@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { v4 as uuidv4 } from 'uuid';
 import { UserRole } from '@prisma/client';
@@ -6,6 +6,12 @@ import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { JwtService } from '@nestjs/jwt';
 
 const BUCKET = 'vault';
+
+// ─── Role Governance Constants ────────────────────────────────────────────────
+// Only super_admin may assign elevated roles.
+// Clients are immutable by default — their role cannot be changed by normal admins.
+const SUPER_ADMIN_ONLY_ROLES: UserRole[] = ['admin', 'super_admin', 'consultant'];
+const IMMUTABLE_ROLES: UserRole[] = ['client']; // client role is default and immutable by normal admins
 
 @Injectable()
 export class AdminService {
@@ -134,7 +140,6 @@ export class AdminService {
       medicalHistory?: string;
     },
   ) {
-    const updates: any = {};
     if (data.name) {
       await this.prisma.user.update({ where: { id: clientId }, data: { name: data.name } });
     }
@@ -316,19 +321,16 @@ export class AdminService {
         updatedByUserId: adminId,
         updatedByRole: adminRole,
         updatedByName: adminName,
+        versions: {
+          create: {
+            id: uuidv4(),
+            version: 1,
+            content,
+            createdById: adminId,
+          },
+        },
       },
-    });
-
-    await this.prisma.protocolVersion.create({
-      data: {
-        id: uuidv4(),
-        protocolId: protocol.id,
-        version: 1,
-        content,
-        createdByUserId: adminId,
-        createdByRole: adminRole,
-        createdByName: adminName,
-      },
+      include: { versions: true },
     });
 
     await this.prisma.auditLog.create({
@@ -346,11 +348,11 @@ export class AdminService {
       data: {
         id: uuidv4(),
         userId: clientId,
-        protocolId: protocol.id,
         eventType: 'protocol_created',
         title: `Protocol Created: ${title}`,
         description: `Created by ${adminName} (${adminRole})`,
         occurredAt: new Date(),
+        protocolId: protocol.id,
         createdByUserId: adminId,
         createdByRole: adminRole,
         createdByName: adminName,
@@ -366,40 +368,22 @@ export class AdminService {
     adminRole: string,
     adminName: string,
     protocolId: string,
-    updates: { title?: string; content?: string; status?: string },
+    data: { title?: string; status?: string },
   ) {
     const protocol = await this.prisma.protocol.findUnique({ where: { id: protocolId } });
     if (!protocol) throw new NotFoundException('Protocol not found');
 
-    const data: any = {
-      updatedAt: new Date(),
-      updatedByUserId: adminId,
-      updatedByRole: adminRole,
-      updatedByName: adminName,
-    };
-    if (updates.title) data.title = updates.title;
-    if (updates.status) data.status = updates.status;
-
-    const updated = await this.prisma.protocol.update({ where: { id: protocolId }, data });
-
-    if (updates.content) {
-      const newVersion = protocol.currentVersion + 1;
-      await this.prisma.protocolVersion.create({
-        data: {
-          id: uuidv4(),
-          protocolId,
-          version: newVersion,
-          content: updates.content,
-          createdByUserId: adminId,
-          createdByRole: adminRole,
-          createdByName: adminName,
-        },
-      });
-      await this.prisma.protocol.update({
-        where: { id: protocolId },
-        data: { currentVersion: newVersion },
-      });
-    }
+    const updated = await this.prisma.protocol.update({
+      where: { id: protocolId },
+      data: {
+        ...(data.title && { title: data.title }),
+        ...(data.status && { status: data.status as any }),
+        updatedAt: new Date(),
+        updatedByUserId: adminId,
+        updatedByRole: adminRole,
+        updatedByName: adminName,
+      },
+    });
 
     await this.prisma.auditLog.create({
       data: {
@@ -408,7 +392,7 @@ export class AdminService {
         action: 'admin_protocol_updated',
         resourceType: 'protocol',
         resourceId: protocolId,
-        metadata: { updatedFields: Object.keys(updates), adminRole },
+        metadata: { updatedFields: Object.keys(data), adminRole },
       },
     });
 
@@ -416,7 +400,12 @@ export class AdminService {
   }
 
   // ── Admin: deliver protocol ───────────────────────────────────────────────
-  async adminDeliverProtocol(adminId: string, adminRole: string, adminName: string, protocolId: string) {
+  async adminDeliverProtocol(
+    adminId: string,
+    adminRole: string,
+    adminName: string,
+    protocolId: string,
+  ) {
     const protocol = await this.prisma.protocol.findUnique({ where: { id: protocolId } });
     if (!protocol) throw new NotFoundException('Protocol not found');
 
@@ -432,21 +421,6 @@ export class AdminService {
       },
     });
 
-    await this.prisma.timelineEvent.create({
-      data: {
-        id: uuidv4(),
-        userId: protocol.clientId,
-        protocolId,
-        eventType: 'protocol_delivered',
-        title: `Protocol Delivered: ${protocol.title}`,
-        description: `Delivered by ${adminName} (${adminRole})`,
-        occurredAt: new Date(),
-        createdByUserId: adminId,
-        createdByRole: adminRole,
-        createdByName: adminName,
-      },
-    });
-
     await this.prisma.auditLog.create({
       data: {
         id: uuidv4(),
@@ -458,10 +432,25 @@ export class AdminService {
       },
     });
 
+    await this.prisma.timelineEvent.create({
+      data: {
+        id: uuidv4(),
+        userId: protocol.clientId,
+        eventType: 'protocol_delivered',
+        title: `Protocol Delivered: ${protocol.title}`,
+        description: `Delivered by ${adminName} (${adminRole})`,
+        occurredAt: new Date(),
+        protocolId: protocol.id,
+        createdByUserId: adminId,
+        createdByRole: adminRole,
+        createdByName: adminName,
+      },
+    });
+
     return updated;
   }
 
-  // ── Admin: add biomarker log for a client ─────────────────────────────────
+  // ── Admin: add biomarker log ──────────────────────────────────────────────
   async adminAddBiomarker(
     adminId: string,
     adminRole: string,
@@ -474,15 +463,10 @@ export class AdminService {
       unit: string;
       referenceMin?: number;
       referenceMax?: number;
-      loggedAt: string;
-      source?: string;
       notes?: string;
+      loggedAt?: string;
     },
   ) {
-    const isAbnormal =
-      (data.referenceMin !== undefined && data.value < data.referenceMin) ||
-      (data.referenceMax !== undefined && data.value > data.referenceMax);
-
     const log = await this.prisma.biomarkerLog.create({
       data: {
         id: uuidv4(),
@@ -493,10 +477,8 @@ export class AdminService {
         unit: data.unit,
         referenceMin: data.referenceMin ?? null,
         referenceMax: data.referenceMax ?? null,
-        isAbnormal,
-        loggedAt: new Date(data.loggedAt),
-        source: data.source ?? null,
         notes: data.notes ?? null,
+        loggedAt: data.loggedAt ? new Date(data.loggedAt) : new Date(),
         createdByUserId: adminId,
         createdByRole: adminRole,
         createdByName: adminName,
@@ -535,25 +517,78 @@ export class AdminService {
     return { success: true };
   }
 
-  // ── Role / assignment management ──────────────────────────────────────────
-  async updateUserRole(userId: string, role: UserRole, adminId: string) {
+  // ── Role management — SUPER_ADMIN ONLY ───────────────────────────────────
+  /**
+   * GOVERNANCE RULES (enforced server-side):
+   * 1. Only super_admin may call this method (enforced in controller via @Roles('super_admin')).
+   * 2. The super_admin account (admin@ontogence.com) role is permanently immutable.
+   * 3. Assigning super_admin to any user is forbidden through this endpoint.
+   * 4. All role changes are fully audited with: actor, previous role, new role, timestamp.
+   */
+  async updateUserRole(
+    targetUserId: string,
+    newRole: UserRole,
+    actorId: string,
+    actorRole: string,
+  ) {
+    // 1. Fetch the target user
+    const target = await this.prisma.user.findUnique({ where: { id: targetUserId } });
+    if (!target) throw new NotFoundException('User not found');
+
+    // 2. Prevent modification of the super_admin account itself
+    if (target.email === 'admin@ontogence.com') {
+      throw new ForbiddenException('The super_admin account role is permanently immutable and cannot be changed.');
+    }
+
+    // 3. Prevent assigning super_admin role through this endpoint
+    if (newRole === 'super_admin') {
+      throw new ForbiddenException('The super_admin role cannot be assigned through this endpoint. Contact system administration.');
+    }
+
+    // 4. Validate the requested role is a known role
+    const allowedRoles: UserRole[] = ['client', 'consultant', 'admin'];
+    if (!allowedRoles.includes(newRole)) {
+      throw new BadRequestException(`Invalid role: ${newRole}. Allowed values: ${allowedRoles.join(', ')}`);
+    }
+
+    // 5. Prevent no-op changes
+    if (target.role === newRole) {
+      return { success: true, message: 'Role unchanged', user: target };
+    }
+
+    const previousRole = target.role;
+
+    // 6. Apply the role change
     const updated = await this.prisma.user.update({
-      where: { id: userId },
-      data: { role, updatedAt: new Date() },
+      where: { id: targetUserId },
+      data: { role: newRole, updatedAt: new Date() },
     });
 
+    // 7. Full audit log — who changed, previous role, new role, timestamp
     await this.prisma.auditLog.create({
       data: {
         id: uuidv4(),
-        userId: adminId,
+        userId: actorId,
         action: 'user_role_changed',
         resourceType: 'user',
-        resourceId: userId,
-        metadata: { newRole: role },
+        resourceId: targetUserId,
+        metadata: {
+          actorId,
+          actorRole,
+          targetUserId,
+          targetEmail: target.email,
+          previousRole,
+          newRole,
+          changedAt: new Date().toISOString(),
+        },
       },
     });
 
-    return updated;
+    return {
+      success: true,
+      user: updated,
+      audit: { previousRole, newRole, changedBy: actorId },
+    };
   }
 
   async assignConsultant(clientId: string, consultantId: string, adminId: string, notes?: string) {
@@ -671,13 +706,6 @@ export class AdminService {
   }
 
   // ── Impersonation token ───────────────────────────────────────────────────
-  /**
-   * Generates a short-lived JWT that the frontend stores in sessionStorage.
-   * The frontend reads this token to render the impersonation banner and
-   * passes it as a header so the API can resolve the impersonated user.
-   * NOTE: This does NOT create a real Clerk session — it is a read-only
-   * view token used to render the client's UI perspective.
-   */
   async generateImpersonationToken(adminId: string, clientId: string) {
     const client = await this.prisma.user.findUnique({ where: { id: clientId } });
     if (!client) throw new NotFoundException('Client not found');
@@ -689,7 +717,7 @@ export class AdminService {
       clientEmail: client.email,
       clientName: client.name,
       iat: Math.floor(Date.now() / 1000),
-      exp: Math.floor(Date.now() / 1000) + 3600, // 1 hour
+      exp: Math.floor(Date.now() / 1000) + 3600,
     };
 
     const token = this.jwtService.sign(payload, { secret: process.env.JWT_SECRET, expiresIn: '1h' });
