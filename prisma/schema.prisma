@@ -87,6 +87,18 @@ enum AuditAction {
   payment_succeeded
   payment_failed
   admin_impersonation
+  admin_impersonation_started
+  admin_file_upload
+  admin_file_archived
+  admin_profile_update
+  admin_protocol_created
+  admin_protocol_updated
+  admin_protocol_delivered
+  admin_biomarker_added
+  admin_biomarker_deleted
+  admin_note_deleted
+  consultant_assigned
+  consultant_unassigned
   consent_signed
   settings_changed
 }
