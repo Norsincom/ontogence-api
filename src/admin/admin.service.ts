@@ -103,7 +103,7 @@ export class AdminService {
         clientConversations: {
           include: {
             messages: {
-              orderBy: { sentAt: 'desc' },
+              orderBy: { createdAt: 'desc' },
               take: 50,
               include: { sender: { select: { id: true, name: true, role: true } } },
             },
@@ -133,11 +133,11 @@ export class AdminService {
     data: {
       name?: string;
       dateOfBirth?: string;
-      biologicalSex?: string;
-      height?: number;
-      weight?: number;
-      primaryGoal?: string;
+      healthGoals?: string;
       medicalHistory?: string;
+      currentMeds?: string;
+      allergies?: string;
+      notes?: string;
     },
   ) {
     if (data.name) {
@@ -146,11 +146,11 @@ export class AdminService {
 
     const profileData: any = {};
     if (data.dateOfBirth !== undefined) profileData.dateOfBirth = data.dateOfBirth ? new Date(data.dateOfBirth) : null;
-    if (data.biologicalSex !== undefined) profileData.biologicalSex = data.biologicalSex;
-    if (data.height !== undefined) profileData.height = data.height;
-    if (data.weight !== undefined) profileData.weight = data.weight;
-    if (data.primaryGoal !== undefined) profileData.primaryGoal = data.primaryGoal;
+    if (data.healthGoals !== undefined) profileData.healthGoals = data.healthGoals;
     if (data.medicalHistory !== undefined) profileData.medicalHistory = data.medicalHistory;
+    if (data.currentMeds !== undefined) profileData.currentMeds = data.currentMeds;
+    if (data.allergies !== undefined) profileData.allergies = data.allergies;
+    if (data.notes !== undefined) profileData.notes = data.notes;
 
     if (Object.keys(profileData).length > 0) {
       await this.prisma.clientProfile.upsert({
@@ -279,7 +279,7 @@ export class AdminService {
 
     await this.prisma.upload.update({
       where: { id: fileId },
-      data: { archivedAt: new Date(), updatedByUserId: adminId, updatedByRole: 'super_admin' },
+      data: { archivedAt: new Date(), updatedByUserId: adminId, updatedByRole: 'admin' },
     });
 
     await this.prisma.auditLog.create({
@@ -326,7 +326,7 @@ export class AdminService {
             id: uuidv4(),
             version: 1,
             content,
-            createdById: adminId,
+            createdByUserId: adminId,
           },
         },
       },
