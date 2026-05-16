@@ -38,8 +38,15 @@ export class VaultService {
 
     if (error) throw new Error(`Storage error: ${error.message}`);
 
+    // Supabase returns a relative URL like /object/upload/sign/...
+    // Prepend the full storage base URL so the browser can PUT directly to Supabase.
+    const supabaseBase = process.env.SUPABASE_URL!.replace(/\/$/, '');
+    const absoluteUploadUrl = data.signedUrl.startsWith('http')
+      ? data.signedUrl
+      : `${supabaseBase}/storage/v1${data.signedUrl}`;
+
     return {
-      uploadUrl: data.signedUrl,
+      uploadUrl: absoluteUploadUrl,
       storageKey,
       token: data.token,
     };
