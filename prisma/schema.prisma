@@ -185,8 +185,8 @@ model Upload {
   isImmutable     Boolean         @default(true)
   uploadedAt      DateTime        @default(now())
   accessedAt      DateTime?
-  archivedAt      DateTime?
-  archivedById    String?
+  archivedAt      DateTime?       @map("archived_at")
+  archivedById    String?         @map("archived_by_id")
   notes           String?
 
   // Attribution / audit
@@ -198,7 +198,7 @@ model Upload {
 
   @@index([userId])
   @@index([category])
-  @@index([archivedAt])
+  @@index([archivedAt], map: "idx_uploads_archived_at")
   @@index([createdByUserId])
   @@map("uploads")
 }
