@@ -28,7 +28,13 @@ export class AdminService {
   async getAllUsers(page = 1, limit = 50, search?: string) {
     const skip = (page - 1) * limit;
     const where = search
-      ? { OR: [{ email: { contains: search } }, { name: { contains: search } }] }
+      ? {
+          OR: [
+            { email: { contains: search, mode: 'insensitive' as any } },
+            { name: { contains: search, mode: 'insensitive' as any } },
+            { ontId: { contains: search, mode: 'insensitive' as any } },
+          ],
+        }
       : {};
 
     const [users, total] = await Promise.all([
@@ -78,7 +84,7 @@ export class AdminService {
         protocols: {
           include: {
             versions: { orderBy: { version: 'asc' } },
-            deliveredBy: { select: { id: true, name: true, email: true, role: true } },
+            deliveredBy: { select: { id: true, name: true, email: true, role: true, ontId: true } },
           },
           orderBy: { updatedAt: 'desc' },
         },
@@ -93,7 +99,7 @@ export class AdminService {
         },
         clientAssignments: {
           include: {
-            consultant: { select: { id: true, name: true, email: true, role: true } },
+            consultant: { select: { id: true, name: true, email: true, role: true, ontId: true } },
           },
         },
         adminNotesAsClient: {
@@ -107,7 +113,7 @@ export class AdminService {
               take: 50,
               include: { sender: { select: { id: true, name: true, role: true } } },
             },
-            staff: { select: { id: true, name: true, email: true, role: true } },
+            staff: { select: { id: true, name: true, email: true, role: true, ontId: true } },
           },
         },
       },
@@ -117,7 +123,7 @@ export class AdminService {
     // Fetch audit logs for this user
     const auditLogs = await this.prisma.auditLog.findMany({
       where: { OR: [{ userId }, { resourceId: userId }] },
-      include: { user: { select: { name: true, email: true, role: true } } },
+      include: { user: { select: { name: true, email: true, role: true, ontId: true } } },
       orderBy: { createdAt: 'desc' },
       take: 200,
     });

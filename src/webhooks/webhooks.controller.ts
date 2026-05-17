@@ -5,6 +5,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { Request, Response } from 'express';
 import { Webhook } from 'svix';
 import { v4 as uuidv4 } from 'uuid';
+import { generateNextOntId } from '../common/utils/ontid.util';
 
 @ApiTags('webhooks')
 @Controller('webhooks')
@@ -73,6 +74,9 @@ export class WebhooksController {
         return res.json({ received: true, merged: true });
       }
 
+      // Generate ONTID for new user — server-side, sequential, immutable
+      const ontId = await generateNextOntId(this.prisma);
+
       await this.prisma.user.upsert({
         where: { clerkId: data.id },
         update: { email, name, avatarUrl: data.image_url || null, updatedAt: new Date() },
@@ -82,6 +86,7 @@ export class WebhooksController {
           email,
           name,
           avatarUrl: data.image_url || null,
+          ontId,
           updatedAt: new Date(),
         },
       });
@@ -91,7 +96,7 @@ export class WebhooksController {
           id: uuidv4(),
           userId: data.id,
           action: 'user_registered',
-          metadata: { email },
+          metadata: { email, ontId },
         },
       });
     }
@@ -102,6 +107,7 @@ export class WebhooksController {
 
       await this.prisma.user.updateMany({
         where: { clerkId: data.id },
+        // NOTE: ontId is intentionally excluded — it must never change after assignment
         data: { email, name, avatarUrl: data.image_url || null, updatedAt: new Date() },
       });
     }

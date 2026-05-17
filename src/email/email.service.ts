@@ -96,6 +96,31 @@ export class EmailService {
     }
   }
 
+  async sendNewMessageToAdmin(to: string, adminName: string, clientName: string, _clientDisplayName: string, timestamp: string) {
+    try {
+      await this.resend.emails.send({
+        from: 'Ontogence <noreply@ontogence.com>',
+        to,
+        subject: `New message from client: ${clientName}`,
+        html: `
+          <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; max-width: 600px; margin: 0 auto; background: #0f1117; color: #e8eaf0; padding: 40px 32px; border-radius: 16px;">
+            <div style="margin-bottom: 32px;"><span style="font-size: 24px; font-weight: 700; color: #5bcea0;">Ontogence</span></div>
+            <h1 style="font-size: 22px; font-weight: 700; color: #f0f2f8; margin: 0 0 16px;">New Client Message</h1>
+            <p style="color: #8b9ab5; line-height: 1.7; margin: 0 0 16px;">Hi ${adminName},</p>
+            <p style="color: #8b9ab5; line-height: 1.7; margin: 0 0 8px;">
+              <strong style="color: #f0f2f8;">${clientName}</strong> sent you a message at ${timestamp}.
+            </p>
+            <p style="color: #8b9ab5; line-height: 1.7; margin: 0 0 24px;">Log in to your admin console to view and respond.</p>
+            <a href="https://ontogence.com/admin/messages" style="display: inline-block; background: #5bcea0; color: #0f1117; font-weight: 600; padding: 12px 24px; border-radius: 10px; text-decoration: none; font-size: 15px;">Open Admin Messages →</a>
+            <p style="color: #4a5568; font-size: 12px; margin-top: 40px;">Ontogence · admin@ontogence.com · ontogence.com</p>
+          </div>
+        `,
+      });
+    } catch (err) {
+      this.logger.error('Failed to send admin message notification email', err);
+    }
+  }
+
   async notifyAdmin(subject: string, body: string) {
     try {
       await this.resend.emails.send({
