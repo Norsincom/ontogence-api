@@ -5,7 +5,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { Request, Response } from 'express';
 import { Webhook } from 'svix';
 import { v4 as uuidv4 } from 'uuid';
-import { generateNextOntId } from '../common/utils/ontid.util';
+import { generateOntId } from '../common/utils/ontid.util';
 
 @ApiTags('webhooks')
 @Controller('webhooks')
@@ -75,7 +75,7 @@ export class WebhooksController {
       }
 
       // Generate ONTID for new user — server-side, sequential, immutable
-      const ontId = await generateNextOntId(this.prisma);
+      const ontId = await generateOntId(this.prisma);
 
       await this.prisma.user.upsert({
         where: { clerkId: data.id },
