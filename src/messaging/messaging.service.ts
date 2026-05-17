@@ -1,17 +1,23 @@
-import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { EmailService } from '../email/email.service';
 import { v4 as uuidv4 } from 'uuid';
 
 @Injectable()
 export class MessagingService {
-  constructor(private prisma: PrismaService) {}
+  private readonly logger = new Logger(MessagingService.name);
+
+  constructor(
+    private prisma: PrismaService,
+    private emailService: EmailService,
+  ) {}
 
   async getMyConversations(userId: string, role: string) {
     if (['admin', 'super_admin'].includes(role)) {
       return this.prisma.conversation.findMany({
         include: {
-          client: { select: { id: true, name: true, email: true, avatarUrl: true } },
-          staff: { select: { id: true, name: true, email: true } },
+          client: { select: { id: true, name: true, email: true, avatarUrl: true, ontId: true } },
+          staff: { select: { id: true, name: true, email: true, ontId: true } },
           messages: { orderBy: { createdAt: 'desc' }, take: 1 },
         },
         orderBy: { lastMessageAt: 'desc' },
@@ -21,8 +27,8 @@ export class MessagingService {
     return this.prisma.conversation.findMany({
       where: { OR: [{ clientId: userId }, { staffId: userId }] },
       include: {
-        client: { select: { id: true, name: true, email: true, avatarUrl: true } },
-        staff: { select: { id: true, name: true, email: true } },
+        client: { select: { id: true, name: true, email: true, avatarUrl: true, ontId: true } },
+        staff: { select: { id: true, name: true, email: true, ontId: true } },
         messages: { orderBy: { createdAt: 'desc' }, take: 1 },
       },
       orderBy: { lastMessageAt: 'desc' },
@@ -59,7 +65,13 @@ export class MessagingService {
     attachmentName?: string,
     senderName?: string,
   ) {
-    const conv = await this.prisma.conversation.findUnique({ where: { id: conversationId } });
+    const conv = await this.prisma.conversation.findUnique({
+      where: { id: conversationId },
+      include: {
+        client: { select: { id: true, name: true, email: true, ontId: true } },
+        staff: { select: { id: true, name: true, email: true, ontId: true } },
+      },
+    });
     if (!conv) throw new NotFoundException('Conversation not found');
     if (conv.clientId !== senderId && conv.staffId !== senderId && !['admin', 'super_admin'].includes(role)) {
       throw new ForbiddenException('Access denied');
@@ -100,7 +112,51 @@ export class MessagingService {
       },
     });
 
+    // ── Email notification (fire-and-forget, never blocks the response) ───────
+    this.sendMessageNotificationEmail(conv as any, senderId, senderName || 'Ontogence').catch((err) => {
+      this.logger.error('Failed to send message notification email', err);
+    });
+
     return message;
+  }
+
+  /**
+   * Sends an email notification to the recipient of a new message.
+   * - Client sends → notify staff/super_admin
+   * - Staff/admin sends → notify client
+   * Never includes message body (HIPAA-safe).
+   */
+  private async sendMessageNotificationEmail(conv: any, senderId: string, senderName: string): Promise<void> {
+    const isClientSending = conv.clientId === senderId;
+    const recipient = isClientSending ? conv.staff : conv.client;
+    if (!recipient?.email) return;
+    const recipientName = recipient.name || 'there';
+    const timestamp = new Date().toLocaleString('en-CA', {
+      timeZone: 'America/Toronto',
+      dateStyle: 'medium',
+      timeStyle: 'short',
+    });
+    if (isClientSending) {
+      await this.emailService.sendNewMessageToAdmin(
+        recipient.email,
+        recipientName,
+        senderName,
+        conv.client?.name || 'A client',
+        timestamp,
+      );
+    } else {
+      await this.emailService.sendNewMessage(recipient.email, recipientName, senderName);
+    }
+    await this.prisma.auditLog.create({
+      data: {
+        id: uuidv4(),
+        userId: senderId,
+        action: 'notification_sent',
+        resourceType: 'conversation',
+        resourceId: conv.id,
+        metadata: { type: 'email_notification', recipientEmail: recipient.email, recipientName, timestamp },
+      },
+    });
   }
 
   async createConversation(clientId: string, staffId: string, subject?: string) {
@@ -148,8 +204,32 @@ export class MessagingService {
   async getAdminUser() {
     const admin = await this.prisma.user.findFirst({
       where: { role: 'super_admin' },
-      select: { id: true, name: true, email: true, avatarUrl: true },
+      select: { id: true, name: true, email: true, avatarUrl: true, ontId: true },
     });
     return admin;
+  }
+
+  /**
+   * Search all non-admin users by name, email, or ONTID.
+   * Used by the super_admin "New Message" modal to select a recipient.
+   */
+  async searchClients(query: string) {
+    const q = query?.trim() || '';
+    const where = q
+      ? {
+          role: { not: 'super_admin' as any },
+          OR: [
+            { name: { contains: q, mode: 'insensitive' as any } },
+            { email: { contains: q, mode: 'insensitive' as any } },
+            { ontId: { contains: q, mode: 'insensitive' as any } },
+          ],
+        }
+      : { role: { not: 'super_admin' as any } };
+    return this.prisma.user.findMany({
+      where,
+      select: { id: true, name: true, email: true, avatarUrl: true, ontId: true, role: true },
+      orderBy: { createdAt: 'asc' },
+      take: 30,
+    });
   }
 }

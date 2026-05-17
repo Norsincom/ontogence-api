@@ -8,6 +8,7 @@ import { Reflector } from '@nestjs/core';
 import { createClerkClient, verifyToken } from '@clerk/backend';
 import { PrismaService } from '../../prisma/prisma.service';
 import { IS_PUBLIC_KEY } from '../decorators/public.decorator';
+import { generateNextOntId } from '../utils/ontid.util';
 
 const SUPER_ADMIN_EMAIL = 'admin@ontogence.com';
 
@@ -56,6 +57,9 @@ export class ClerkAuthGuard implements CanActivate {
         // Auto-assign super_admin role for the designated admin email
         const role = email === SUPER_ADMIN_EMAIL ? 'super_admin' : 'client';
 
+        // Generate unique ONTID — server-side, sequential, collision-safe
+        const ontId = await generateNextOntId(this.prisma);
+
         user = await this.prisma.user.create({
           data: {
             id: clerkId,
@@ -64,16 +68,27 @@ export class ClerkAuthGuard implements CanActivate {
             name,
             avatarUrl: clerkUser.imageUrl || null,
             role: role as any,
+            ontId,
             // Super admin skips onboarding
             onboardingDone: email === SUPER_ADMIN_EMAIL,
           },
         });
-      } else if (user.email === SUPER_ADMIN_EMAIL && user.role !== 'super_admin') {
-        // Promote existing admin@ontogence.com user to super_admin if not already
-        user = await this.prisma.user.update({
-          where: { id: user.id },
-          data: { role: 'super_admin', onboardingDone: true },
-        });
+      } else {
+        // Ensure existing users without an ONTID get one assigned (backfill safety net)
+        if (!user.ontId) {
+          const ontId = await generateNextOntId(this.prisma);
+          user = await this.prisma.user.update({
+            where: { id: user.id },
+            data: { ontId },
+          });
+        }
+        if (user.email === SUPER_ADMIN_EMAIL && user.role !== 'super_admin') {
+          // Promote existing admin@ontogence.com user to super_admin if not already
+          user = await this.prisma.user.update({
+            where: { id: user.id },
+            data: { role: 'super_admin', onboardingDone: true },
+          });
+        }
       }
 
       request.user = user;

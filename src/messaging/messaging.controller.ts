@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Param } from '@nestjs/common';
+import { Controller, Get, Post, Body, Param, Query } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { MessagingService } from './messaging.service';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
@@ -47,5 +47,14 @@ export class MessagingController {
   @Get('admin-user')
   getAdminUser() {
     return this.messagingService.getAdminUser();
+  }
+
+  /**
+   * Search clients by name, email, or ONTID.
+   * Super admin only — used by the New Message modal.
+   */
+  @Get('search-clients')
+  searchClients(@Query('q') q: string) {
+    return this.messagingService.searchClients(q || '');
   }
 }
