@@ -1,4 +1,5 @@
-import { Controller, Get, Post, Patch, Body, Param } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Body, Param, Res } from '@nestjs/common';
+import { Response } from 'express';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { ProtocolsService } from './protocols.service';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
@@ -50,5 +51,24 @@ export class ProtocolsController {
     @Body() body: { content: string; notes?: string },
   ) {
     return this.protocolsService.addVersion(id, user.id, body.content, body.notes, user.role, user.name);
+  }
+
+  /**
+   * GET /protocols/:id/pdf
+   * Download a protocol as a PDF with the client ONTID embedded in the header and footer.
+   */
+  @Get(':id/pdf')
+  async downloadPdf(
+    @CurrentUser() user: any,
+    @Param('id') id: string,
+    @Res() res: Response,
+  ) {
+    const pdfBuffer = await this.protocolsService.generateProtocolPdf(id, user.id, user.role);
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `attachment; filename="ontogence-protocol-${id}.pdf"`,
+      'Content-Length': pdfBuffer.length,
+    });
+    res.end(pdfBuffer);
   }
 }

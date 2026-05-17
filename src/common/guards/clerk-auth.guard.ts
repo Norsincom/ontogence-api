@@ -8,7 +8,7 @@ import { Reflector } from '@nestjs/core';
 import { createClerkClient, verifyToken } from '@clerk/backend';
 import { PrismaService } from '../../prisma/prisma.service';
 import { IS_PUBLIC_KEY } from '../decorators/public.decorator';
-import { generateNextOntId } from '../utils/ontid.util';
+import { generateOntId } from '../utils/ontid.util';
 
 const SUPER_ADMIN_EMAIL = 'admin@ontogence.com';
 
@@ -58,7 +58,7 @@ export class ClerkAuthGuard implements CanActivate {
         const role = email === SUPER_ADMIN_EMAIL ? 'super_admin' : 'client';
 
         // Generate unique ONTID — server-side, sequential, collision-safe
-        const ontId = await generateNextOntId(this.prisma);
+        const ontId = await generateOntId(this.prisma);
 
         user = await this.prisma.user.create({
           data: {
@@ -76,7 +76,7 @@ export class ClerkAuthGuard implements CanActivate {
       } else {
         // Ensure existing users without an ONTID get one assigned (backfill safety net)
         if (!user.ontId) {
-          const ontId = await generateNextOntId(this.prisma);
+          const ontId = await generateOntId(this.prisma);
           user = await this.prisma.user.update({
             where: { id: user.id },
             data: { ontId },

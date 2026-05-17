@@ -151,7 +151,7 @@ export class MessagingService {
       data: {
         id: uuidv4(),
         userId: senderId,
-        action: 'notification_sent',
+        action: 'message_sent',
         resourceType: 'conversation',
         resourceId: conv.id,
         metadata: { type: 'email_notification', recipientEmail: recipient.email, recipientName, timestamp },

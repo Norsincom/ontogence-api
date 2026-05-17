@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { v4 as uuidv4 } from 'uuid';
+import * as PDFDocument from 'pdfkit';
 
 @Injectable()
 export class ProtocolsService {
@@ -200,6 +201,89 @@ export class ProtocolsService {
         updatedByRole: adminRole || 'admin',
         updatedByName: adminName || null,
       },
+    });
+  }
+
+  /**
+   * Generate a PDF for a protocol with the client ONTID embedded in the header and footer.
+   * Returns a Buffer containing the PDF bytes.
+   */
+  async generateProtocolPdf(protocolId: string, requesterId: string, requesterRole: string): Promise<Buffer> {
+    const protocol = await this.prisma.protocol.findUnique({
+      where: { id: protocolId },
+      include: {
+        versions: { orderBy: { version: 'desc' }, take: 1 },
+        deliveredBy: { select: { name: true, email: true } },
+      },
+    });
+    if (!protocol) throw new NotFoundException('Protocol not found');
+    if (protocol.clientId !== requesterId && !['admin', 'super_admin', 'consultant'].includes(requesterRole)) {
+      throw new ForbiddenException('Access denied');
+    }
+
+    const client = await this.prisma.user.findUnique({
+      where: { id: protocol.clientId },
+      select: { name: true, email: true, ontId: true },
+    });
+
+    const latestVersion = protocol.versions[0];
+    const content = latestVersion?.content || '';
+    const deliveredByName = protocol.deliveredBy?.name || 'Ontogence';
+    const clientName = client?.name || 'Client';
+    const clientOntId = client?.ontId || 'N/A';
+    const deliveredAt = protocol.deliveredAt
+      ? new Date(protocol.deliveredAt).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })
+      : 'Pending';
+
+    return new Promise((resolve, reject) => {
+      const doc = new PDFDocument({ margin: 60, size: 'A4' });
+      const chunks: Buffer[] = [];
+      doc.on('data', (chunk) => chunks.push(chunk));
+      doc.on('end', () => resolve(Buffer.concat(chunks)));
+      doc.on('error', reject);
+
+      // Header bar
+      doc.rect(0, 0, doc.page.width, 80).fill('#0a1628');
+      doc.fillColor('#ffffff').fontSize(20).font('Helvetica-Bold').text('ONTOGENCE', 60, 28);
+      doc.fillColor('#4ade80').fontSize(8).font('Helvetica').text('MECHANISM INTELLIGENCE PLATFORM', 60, 52);
+
+      // ONTID badge top-right
+      const ontIdX = doc.page.width - 210;
+      doc.roundedRect(ontIdX, 18, 160, 44, 6).fill('#1e3a5f');
+      doc.fillColor('#4ade80').fontSize(7).font('Helvetica-Bold').text('CLIENT IDENTITY', ontIdX + 10, 26);
+      doc.fillColor('#ffffff').fontSize(12).font('Helvetica-Bold').text(clientOntId, ontIdX + 10, 40);
+
+      doc.moveDown(4);
+
+      // Protocol title
+      doc.fillColor('#0a1628').fontSize(22).font('Helvetica-Bold').text(protocol.title);
+      doc.moveDown(0.5);
+
+      // Metadata
+      doc.fillColor('#6b7280').fontSize(9).font('Helvetica')
+        .text(`Client: ${clientName}  ·  ONTID: ${clientOntId}  ·  Status: ${protocol.status.toUpperCase()}  ·  Delivered: ${deliveredAt}  ·  Prepared by: ${deliveredByName}`);
+      doc.moveDown(0.3);
+
+      // Divider
+      doc.moveTo(60, doc.y).lineTo(doc.page.width - 60, doc.y).strokeColor('#e5e7eb').lineWidth(1).stroke();
+      doc.moveDown(1);
+
+      // Content
+      doc.fillColor('#111827').fontSize(10.5).font('Helvetica').text(content, { align: 'left', lineGap: 4 });
+
+      doc.moveDown(2);
+
+      // Footer
+      const footerY = doc.page.height - 60;
+      doc.moveTo(60, footerY).lineTo(doc.page.width - 60, footerY).strokeColor('#e5e7eb').lineWidth(0.5).stroke();
+      doc.fillColor('#9ca3af').fontSize(8).font('Helvetica')
+        .text(
+          `Ontogence Mechanism Intelligence Platform  ·  ONTID: ${clientOntId}  ·  Generated: ${new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}`,
+          60, footerY + 10,
+          { align: 'center', width: doc.page.width - 120 }
+        );
+
+      doc.end();
     });
   }
 }
