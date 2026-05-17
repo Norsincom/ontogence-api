@@ -46,6 +46,33 @@ export class WebhooksController {
       const email = data.email_addresses?.[0]?.email_address || '';
       const name = [data.first_name, data.last_name].filter(Boolean).join(' ') || null;
 
+      // ── Duplicate-account prevention ─────────────────────────────────────────
+      // If a user with this email already exists (created via a different Clerk
+      // identity), link the new Clerk ID to the existing record instead of
+      // creating a second row.
+      const existingByEmail = await this.prisma.user.findUnique({ where: { email } });
+
+      if (existingByEmail && existingByEmail.clerkId !== data.id) {
+        await this.prisma.user.update({
+          where: { id: existingByEmail.id },
+          data: {
+            clerkId: data.id,
+            name: name || existingByEmail.name,
+            avatarUrl: data.image_url || existingByEmail.avatarUrl,
+            updatedAt: new Date(),
+          },
+        });
+        await this.prisma.auditLog.create({
+          data: {
+            id: uuidv4(),
+            userId: existingByEmail.id,
+            action: 'user_registered',
+            metadata: { email, note: 'Linked duplicate Clerk identity to existing account', newClerkId: data.id },
+          },
+        });
+        return res.json({ received: true, merged: true });
+      }
+
       await this.prisma.user.upsert({
         where: { clerkId: data.id },
         update: { email, name, avatarUrl: data.image_url || null, updatedAt: new Date() },

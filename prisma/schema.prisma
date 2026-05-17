@@ -113,6 +113,7 @@ model User {
   avatarUrl       String?
   role            UserRole  @default(client)
   onboardingDone  Boolean   @default(false)
+  ontId           String?   @unique @map("ont_id")
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 
