@@ -1,8 +1,14 @@
-import { IsOptional, IsString, IsDateString } from 'class-validator';
+import { IsOptional, IsString, IsDateString, Matches } from 'class-validator';
 
 export class UpdateProfileDto {
   @IsOptional() @IsString() legalName?: string;
-  @IsOptional() @IsDateString() dateOfBirth?: string;
+  // Strict YYYY-MM-DD with 4-digit year between 1900 and current year
+  @IsOptional()
+  @IsDateString()
+  @Matches(/^(19|20)\d{2}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/, {
+    message: 'dateOfBirth must be a valid date in YYYY-MM-DD format with a 4-digit year between 1900 and 2099',
+  })
+  dateOfBirth?: string;
   @IsOptional() @IsString() phone?: string;
   @IsOptional() @IsString() address?: string;
   @IsOptional() @IsString() city?: string;
