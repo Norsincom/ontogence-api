@@ -1,4 +1,4 @@
-import { Controller, Post, Get, Body, Req, Res, HttpCode } from '@nestjs/common';
+import { Controller, Post, Get, Body, Req, Res, HttpCode, RawBodyRequest } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { StripeService } from './stripe.service';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
@@ -57,14 +57,16 @@ export class StripeController {
   @Post('webhook')
   @Public()
   @HttpCode(200)
-  async handleWebhook(@Req() req: Request, @Res() res: Response) {
+  async handleWebhook(@Req() req: RawBodyRequest<Request>, @Res() res: Response) {
     const sig = req.headers['stripe-signature'] as string;
 
-    // Test event bypass
+    // Use rawBody for Stripe signature verification (requires rawBody: true in NestFactory)
+    const rawBody = req.rawBody || req.body;
     let event: any;
     try {
-      event = this.stripeService.constructEvent(req.body as Buffer, sig);
-    } catch {
+      event = this.stripeService.constructEvent(rawBody as Buffer, sig);
+    } catch (err) {
+      console.error('[Stripe Webhook] Signature verification failed:', err.message);
       return res.status(400).json({ error: 'Webhook signature verification failed' });
     }
 
