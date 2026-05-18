@@ -320,7 +320,6 @@ export class AdminService {
         title,
         status: 'draft',
         currentVersion: 1,
-        updatedAt: new Date(),
         createdByUserId: adminId,
         createdByRole: adminRole,
         createdByName: adminName,
@@ -384,7 +383,6 @@ export class AdminService {
       data: {
         ...(data.title && { title: data.title }),
         ...(data.status && { status: data.status as any }),
-        updatedAt: new Date(),
         updatedByUserId: adminId,
         updatedByRole: adminRole,
         updatedByName: adminName,
@@ -420,7 +418,6 @@ export class AdminService {
       data: {
         status: 'delivered',
         deliveredAt: new Date(),
-        updatedAt: new Date(),
         updatedByUserId: adminId,
         updatedByRole: adminRole,
         updatedByName: adminName,
