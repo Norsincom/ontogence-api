@@ -78,6 +78,15 @@ export class StripeController {
       await this.stripeService.handleCheckoutComplete(event.data.object);
     }
 
+    // Handle subscription lifecycle events — ensures vault stays active on renewal
+    // and gets deactivated on cancellation/non-payment
+    if (
+      event.type === 'customer.subscription.updated' ||
+      event.type === 'customer.subscription.deleted'
+    ) {
+      await this.stripeService.handleSubscriptionUpdate(event.data.object);
+    }
+
     return res.json({ received: true });
   }
 }
