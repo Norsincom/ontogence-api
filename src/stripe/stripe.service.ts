@@ -172,6 +172,36 @@ export class StripeService {
       return;
     }
 
+    // RACE CONDITION GUARD: Ensure the user record exists before creating FK-dependent records.
+    // The Clerk webhook that creates the user may not have fired yet when Stripe fires.
+    const userExists = await this.prisma.user.findUnique({ where: { id: userId } }).catch(() => null);
+    if (!userExists) {
+      const email = session.metadata?.customer_email || session.customer_email || '';
+      const name = session.metadata?.customer_name || '';
+      this.logger.warn(`[Stripe] User ${userId} not in DB — creating stub record from checkout metadata`);
+      try {
+        // Generate ONTID
+        const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+        let ontId = 'ONT-';
+        for (let i = 0; i < 8; i++) ontId += chars[Math.floor(Math.random() * chars.length)];
+        await this.prisma.user.create({
+          data: {
+            id: userId,
+            clerkId: userId,
+            email,
+            name,
+            role: 'client',
+            ontId,
+            onboardingDone: false,
+          },
+        });
+        this.logger.log(`[Stripe] Created stub user for ${userId} | email=${email} | ontId=${ontId}`);
+      } catch (createErr: any) {
+        // If unique constraint on email, user may have been created with different ID — log and continue
+        this.logger.error(`[Stripe] Failed to create stub user for ${userId}: ${createErr.message}`);
+      }
+    }
+
     this.logger.log(`[Stripe] checkout.session.completed: userId=${userId} mode=${session.mode} has_vault=${session.metadata?.has_vault}`);
 
     const amountCents = session.amount_total || 0;
@@ -314,5 +344,54 @@ export class StripeService {
   constructEvent(payload: Buffer, signature: string) {
     if (!stripe) throw new Error('Stripe is not configured');
     return stripe.webhooks.constructEvent(payload, signature, process.env.STRIPE_WEBHOOK_SECRET || '');
+  }
+
+  /**
+   * Self-healing sync: reconcile a user's Stripe subscriptions with the local DB.
+   * Called on-demand from GET /stripe/sync (authenticated) — runs on every dashboard
+   * load after payment=success, and can be called manually by the user.
+   */
+  async syncSubscriptionForUser(userId: string, userEmail: string) {
+    if (!stripe) return { synced: false, reason: 'Stripe not configured' };
+
+    // Find Stripe customer by email
+    const customers = await stripe.customers.list({ email: userEmail, limit: 5 });
+    if (!customers.data.length) {
+      return { synced: false, reason: 'No Stripe customer found for this email' };
+    }
+
+    // Check all customers for active subscriptions
+    for (const customer of customers.data) {
+      const subs = await stripe.subscriptions.list({ customer: customer.id, status: 'active', limit: 5 });
+      for (const sub of subs.data) {
+        // Check if we already have this subscription in DB
+        const existing = await this.prisma.subscription.findUnique({ where: { stripeSubscriptionId: sub.id } }).catch(() => null);
+        if (!existing) {
+          this.logger.log(`[Stripe Sync] Creating missing subscription for userId=${userId} stripeSubId=${sub.id}`);
+          await this.prisma.subscription.create({
+            data: {
+              id: require('crypto').randomUUID(),
+              userId,
+              stripeSubscriptionId: sub.id,
+              stripePriceId: sub.items.data[0]?.price.id || '',
+              status: 'active',
+              currentPeriodStart: new Date(sub.current_period_start * 1000),
+              currentPeriodEnd: new Date(sub.current_period_end * 1000),
+            },
+          });
+          return { synced: true, subscriptionId: sub.id };
+        } else if (existing.status !== 'active') {
+          await this.prisma.subscription.update({
+            where: { stripeSubscriptionId: sub.id },
+            data: { status: 'active', currentPeriodEnd: new Date(sub.current_period_end * 1000) },
+          });
+          return { synced: true, subscriptionId: sub.id, updated: true };
+        } else {
+          return { synced: true, subscriptionId: sub.id, alreadyActive: true };
+        }
+      }
+    }
+
+    return { synced: false, reason: 'No active Stripe subscription found' };
   }
 }
