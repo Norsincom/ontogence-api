@@ -54,6 +54,12 @@ export class StripeController {
     return this.stripeService.getInvoices(user.id);
   }
 
+  @Get('sync')
+  @ApiBearerAuth()
+  async syncSubscription(@CurrentUser() user: any) {
+    return this.stripeService.syncSubscriptionForUser(user.id, user.email);
+  }
+
   @Post('webhook')
   @Public()
   @HttpCode(200)
