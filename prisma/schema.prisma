@@ -39,6 +39,8 @@ enum UploadCategory {
   intake_form
   insurance
   protocols
+  prescriptions
+  appointments
   other
 }
 
