@@ -44,6 +44,15 @@ export class AdminService {
         take: limit,
         include: {
           profile: true,
+          subscriptions: {
+            orderBy: { createdAt: 'desc' },
+            take: 1,
+            select: {
+              status: true,
+              cancelAtPeriodEnd: true,
+              currentPeriodEnd: true,
+            },
+          },
           _count: {
             select: { protocols: true, uploads: true, biomarkerLogs: true },
           },
