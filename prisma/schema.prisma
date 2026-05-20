@@ -160,6 +160,9 @@ model User {
   intakeLogs              IntakeLog[]    @relation("IntakeLogOwner")
   intakeLogsCreated       IntakeLog[]    @relation("IntakeLogCreatedBy")
   intakeLogEdits          IntakeLogEdit[] @relation("IntakeLogEdits")
+  atlasAnalysesAsClient   AtlasAnalysis[] @relation("AtlasClient")
+  atlasAnalysesRequested  AtlasAnalysis[] @relation("AtlasRequester")
+  atlasReviews            AtlasReviewHistory[] @relation("AtlasReviewer")
 
   @@map("users")
 }
@@ -553,4 +556,72 @@ model IntakeLogEdit {
 
   @@index([intakeLogId])
   @@map("intake_log_edits")
+}
+
+// ─── Atlas Review Engine ──────────────────────────────────────────────────────
+
+enum AtlasAnalysisType {
+  BIOMARKER_TREND
+  PROTOCOL_EFFICACY
+  INTAKE_PATTERN
+  VAULT_SUMMARY
+  LONGITUDINAL_HEALTH
+  SYMPTOM_CORRELATION
+  CUSTOM
+}
+
+enum AtlasStatus {
+  PENDING
+  RUNNING
+  COMPLETED
+  FAILED
+}
+
+model AtlasAnalysis {
+  id              String              @id @default(cuid())
+  // Scope
+  clientId        String
+  client          User                @relation("AtlasClient", fields: [clientId], references: [id], onDelete: Cascade)
+  requestedById   String
+  requestedBy     User                @relation("AtlasRequester", fields: [requestedById], references: [id])
+  // Analysis config
+  analysisType    AtlasAnalysisType
+  customPrompt    String?             @db.Text
+  dateRangeStart  DateTime?
+  dateRangeEnd    DateTime?
+  // Data snapshot (what was ingested for this analysis)
+  dataSnapshot    Json?
+  // Result
+  status          AtlasStatus         @default(PENDING)
+  result          String?             @db.Text
+  errorMessage    String?             @db.Text
+  modelUsed       String?
+  tokensUsed      Int?
+  processingMs    Int?
+  // Timestamps
+  createdAt       DateTime            @default(now())
+  completedAt     DateTime?
+  // Relations
+  reviewHistory   AtlasReviewHistory[]
+
+  @@index([clientId])
+  @@index([requestedById])
+  @@index([analysisType])
+  @@index([createdAt])
+  @@map("atlas_analyses")
+}
+
+model AtlasReviewHistory {
+  id              String        @id @default(cuid())
+  analysisId      String
+  analysis        AtlasAnalysis @relation(fields: [analysisId], references: [id], onDelete: Cascade)
+  reviewedById    String
+  reviewedBy      User          @relation("AtlasReviewer", fields: [reviewedById], references: [id])
+  action          String        // viewed | exported | flagged | annotated
+  annotation      String?       @db.Text
+  createdAt       DateTime      @default(now())
+
+  @@index([analysisId])
+  @@index([reviewedById])
+  @@map("atlas_review_history")
 }
