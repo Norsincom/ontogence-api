@@ -103,6 +103,23 @@ enum AuditAction {
   consultant_unassigned
   consent_signed
   settings_changed
+  intake_log_created
+  intake_log_updated
+  intake_log_deleted
+}
+
+enum IntakeEntryType {
+  medication
+  supplement
+  meal
+  beverage
+  therapy
+  exercise
+  symptom
+  sleep
+  protocol_action
+  biomarker_event
+  other
 }
 
 // ─── Core Entities ────────────────────────────────────────────────────────────
@@ -140,6 +157,9 @@ model User {
   notifications           Notification[]
   adminNotesAsClient      AdminNote[]    @relation("ClientAdminNotes")
   adminNotesAsAuthor      AdminNote[]    @relation("AuthorAdminNotes")
+  intakeLogs              IntakeLog[]    @relation("IntakeLogOwner")
+  intakeLogsCreated       IntakeLog[]    @relation("IntakeLogCreatedBy")
+  intakeLogEdits          IntakeLogEdit[] @relation("IntakeLogEdits")
 
   @@map("users")
 }
@@ -487,4 +507,50 @@ model AdminNote {
 
   @@index([clientId])
   @@map("admin_notes")
+}
+
+// ─── Intake Log ───────────────────────────────────────────────────────────────
+
+model IntakeLog {
+  id              String          @id @default(cuid())
+  userId          String
+  user            User            @relation("IntakeLogOwner", fields: [userId], references: [id], onDelete: Cascade)
+  createdById     String
+  createdBy       User            @relation("IntakeLogCreatedBy", fields: [createdById], references: [id])
+  // Entry data
+  entryType       IntakeEntryType
+  name            String
+  dose            String?
+  unit            String?
+  route           String?
+  notes           String?         @db.Text
+  tags            String?
+  attachmentKey   String?
+  attachmentUrl   String?
+  // Dual timestamps
+  eventAt         DateTime
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+  // Edit history
+  editHistory     IntakeLogEdit[]
+
+  @@index([userId])
+  @@index([eventAt])
+  @@index([entryType])
+  @@map("intake_logs")
+}
+
+model IntakeLogEdit {
+  id            String    @id @default(cuid())
+  intakeLogId   String
+  intakeLog     IntakeLog @relation(fields: [intakeLogId], references: [id], onDelete: Cascade)
+  editedById    String
+  editedBy      User      @relation("IntakeLogEdits", fields: [editedById], references: [id])
+  fieldChanged  String
+  oldValue      String?   @db.Text
+  newValue      String?   @db.Text
+  editedAt      DateTime  @default(now())
+
+  @@index([intakeLogId])
+  @@map("intake_log_edits")
 }
