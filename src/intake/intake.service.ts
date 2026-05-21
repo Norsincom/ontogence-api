@@ -73,7 +73,7 @@ export class IntakeService {
         take: query.take ?? 50,
         include: {
           createdBy: {
-            select: { id: true, name: true, role: true, avatarUrl: true, imageUrl: true },
+            select: { id: true, name: true, role: true, avatarUrl: true },
           },
           editHistory: {
             orderBy: { editedAt: 'desc' },
@@ -95,7 +95,7 @@ export class IntakeService {
       where: { id, userId },
       include: {
         createdBy: {
-          select: { id: true, name: true, role: true, avatarUrl: true, imageUrl: true },
+          select: { id: true, name: true, role: true, avatarUrl: true },
         },
         editHistory: {
           orderBy: { editedAt: 'desc' },
