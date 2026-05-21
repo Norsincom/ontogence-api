@@ -16,6 +16,7 @@ import { HealthModule } from './health/health.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { IntakeModule } from './intake/intake.module';
 import { AtlasModule } from './atlas/atlas.module';
+import { PrescriptionsModule } from './prescriptions/prescriptions.module';
 
 @Module({
   imports: [
@@ -36,6 +37,7 @@ import { AtlasModule } from './atlas/atlas.module';
     NotificationsModule,
     IntakeModule,
     AtlasModule,
+    PrescriptionsModule,
   ],
 })
 export class AppModule {}
