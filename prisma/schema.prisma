@@ -163,6 +163,9 @@ model User {
   atlasAnalysesAsClient   AtlasAnalysis[] @relation("AtlasClient")
   atlasAnalysesRequested  AtlasAnalysis[] @relation("AtlasRequester")
   atlasReviews            AtlasReviewHistory[] @relation("AtlasReviewer")
+  prescriptions           Prescription[]
+  prescriptionsCreated    Prescription[]       @relation("PrescriptionCreatedBy")
+  prescriptionEdits       PrescriptionEdit[]   @relation("PrescriptionEdits")
 
   @@map("users")
 }
@@ -628,4 +631,58 @@ model AtlasReviewHistory {
   @@index([analysisId])
   @@index([reviewedById])
   @@map("atlas_review_history")
+}
+
+// ─── Prescriptions ────────────────────────────────────────────────────────────
+model Prescription {
+  id                String    @id @default(cuid())
+  userId            String
+  user              User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Core medication fields
+  medicationName    String
+  strength          String?
+  dose              String?
+  frequency         String?
+  route             String?   @default("oral")
+
+  // Prescriber / pharmacy
+  prescribingPhysician String?
+  pharmacy          String?
+
+  // Dates
+  startDate         DateTime?
+  endDate           DateTime?
+
+  // Status & notes
+  isActive          Boolean   @default(true)
+  notes             String?   @db.Text
+
+  // Medication intelligence (LLM-enriched, cached)
+  medClass          String?
+  indication        String?
+  appearance        String?   @db.Text   // JSON: { color, shape, imprint, description }
+  educationNote     String?   @db.Text   // Safety-framed educational text
+
+  // Audit
+  createdById       String?
+  createdBy         User?     @relation("PrescriptionCreatedBy", fields: [createdById], references: [id])
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  editHistory       PrescriptionEdit[]
+
+  @@map("prescriptions")
+}
+
+model PrescriptionEdit {
+  id              String       @id @default(cuid())
+  prescriptionId  String
+  prescription    Prescription @relation(fields: [prescriptionId], references: [id], onDelete: Cascade)
+  editorId        String
+  editor          User         @relation("PrescriptionEdits", fields: [editorId], references: [id])
+  changeNote      String?
+  snapshotJson    String?      @db.Text
+  createdAt       DateTime     @default(now())
+
+  @@map("prescription_edits")
 }
