@@ -181,6 +181,10 @@ model ClientProfile {
   postalCode      String?
   emergencyName   String?
   emergencyPhone  String?
+  biologicalSex   String?
+  height          Float?
+  weight          Float?
+  primaryGoal     String?
   healthGoals     String?
   medicalHistory  String?
   currentMeds     String?
