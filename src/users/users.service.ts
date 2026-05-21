@@ -38,22 +38,29 @@ export class UsersService {
   }
 
   async updateProfile(userId: string, dto: UpdateProfileDto) {
-    const existing = await this.prisma.clientProfile.findUnique({ where: { userId } });
+    // Build the Prisma-safe data object — convert string fields to correct types
+    const { dateOfBirth, height, weight, ...rest } = dto;
+    const data: Record<string, unknown> = { ...rest, updatedAt: new Date() };
 
-    if (existing) {
-      return this.prisma.clientProfile.update({
-        where: { userId },
-        data: { ...dto, updatedAt: new Date() },
-      });
+    // dateOfBirth: DTO accepts YYYY-MM-DD string; Prisma expects DateTime
+    if (dateOfBirth !== undefined) {
+      data.dateOfBirth = dateOfBirth ? new Date(dateOfBirth + 'T00:00:00.000Z') : null;
     }
 
+    // height / weight: coerce to number in case they arrive as strings
+    if (height !== undefined) {
+      data.height = height !== null && height !== undefined ? Number(height) : null;
+    }
+    if (weight !== undefined) {
+      data.weight = weight !== null && weight !== undefined ? Number(weight) : null;
+    }
+
+    const existing = await this.prisma.clientProfile.findUnique({ where: { userId } });
+    if (existing) {
+      return this.prisma.clientProfile.update({ where: { userId }, data });
+    }
     return this.prisma.clientProfile.create({
-      data: {
-        id: userId + '-profile',
-        userId,
-        ...dto,
-        updatedAt: new Date(),
-      },
+      data: { id: userId + '-profile', userId, ...data },
     });
   }
 
