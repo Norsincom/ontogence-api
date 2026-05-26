@@ -7,6 +7,37 @@ import { JwtService } from '@nestjs/jwt';
 
 const BUCKET = 'vault';
 
+// ─── Valid UploadCategory enum values (must match Prisma schema exactly) ─────
+// This guard prevents any invalid category string from causing a DB 500 error.
+const VALID_UPLOAD_CATEGORIES = new Set([
+  'bloodwork', 'mri', 'ct_scan', 'pet_scan', 'pathology', 'biopsy',
+  'genomics', 'microbiome', 'metabolomics', 'proteomics', 'epigenetics',
+  'imaging', 'ecg', 'sleep', 'nutrition', 'supplements', 'medications',
+  'symptoms', 'intake_form', 'insurance', 'protocols', 'prescriptions',
+  'appointments', 'other',
+]);
+
+/** Map legacy/invalid category strings to valid UploadCategory enum values */
+function sanitizeCategory(category: string): string {
+  if (VALID_UPLOAD_CATEGORIES.has(category)) return category;
+  // Legacy mappings
+  const legacyMap: Record<string, string> = {
+    labs: 'bloodwork',
+    lab: 'bloodwork',
+    pdf: 'other',
+    photo: 'imaging',
+    image: 'imaging',
+    photos: 'imaging',
+    protocol: 'protocols',
+    prescription: 'prescriptions',
+    appointment: 'appointments',
+    supplement: 'supplements',
+    medication: 'medications',
+    symptom: 'symptoms',
+  };
+  return legacyMap[category?.toLowerCase()] || 'other';
+}
+
 // ─── Role Governance Constants ────────────────────────────────────────────────
 // Only super_admin may assign elevated roles.
 // Clients are immutable by default — their role cannot be changed by normal admins.
@@ -197,16 +228,19 @@ export class AdminService {
     mimeType: string,
     category: string,
   ) {
+        const safeCategory = sanitizeCategory(category);
     const ext = fileName.split('.').pop() || 'bin';
-    const storageKey = `${clientId}/${category}/${uuidv4()}.${ext}`;
-
+    const storageKey = `${clientId}/${safeCategory}/${uuidv4()}.${ext}`;
     const { data, error } = await this.supabase.storage
       .from(BUCKET)
       .createSignedUploadUrl(storageKey);
-
     if (error) throw new Error(`Storage error: ${error.message}`);
-
-    return { uploadUrl: data.signedUrl, storageKey, token: data.token };
+    // Ensure the upload URL is absolute (Supabase may return a relative path)
+    const supabaseBase = (process.env.SUPABASE_URL || '').replace(/\/$/, '');
+    const absoluteUploadUrl = data.signedUrl.startsWith('http')
+      ? data.signedUrl
+      : `${supabaseBase}/storage/v1${data.signedUrl}`;
+    return { uploadUrl: absoluteUploadUrl, storageKey, token: data.token };
   }
 
   // ── Admin confirm upload for a client ────────────────────────────────────
@@ -222,6 +256,7 @@ export class AdminService {
     category: string,
     notes?: string,
   ) {
+    const safeCategory = sanitizeCategory(category);
     const { data } = await this.supabase.storage.from(BUCKET).getPublicUrl(storageKey);
     const storageUrl = data.publicUrl;
     const crypto = await import('crypto');
@@ -235,7 +270,7 @@ export class AdminService {
         originalName,
         mimeType,
         sizeBytes,
-        category: category as any,
+        category: safeCategory as any,
         storageKey,
         storageUrl,
         sha256Hash,
