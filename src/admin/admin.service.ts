@@ -178,7 +178,12 @@ export class AdminService {
     adminRole: string,
     data: {
       name?: string;
+      legalName?: string;
       dateOfBirth?: string;
+      biologicalSex?: string;
+      height?: number | string;
+      weight?: number | string;
+      primaryGoal?: string;
       healthGoals?: string;
       medicalHistory?: string;
       currentMeds?: string;
@@ -191,7 +196,12 @@ export class AdminService {
     }
 
     const profileData: any = {};
+    if (data.legalName !== undefined) profileData.legalName = data.legalName || null;
     if (data.dateOfBirth !== undefined) profileData.dateOfBirth = data.dateOfBirth ? new Date(data.dateOfBirth) : null;
+    if (data.biologicalSex !== undefined) profileData.biologicalSex = data.biologicalSex || null;
+    if (data.height !== undefined) profileData.height = data.height !== '' && data.height !== null ? parseFloat(String(data.height)) : null;
+    if (data.weight !== undefined) profileData.weight = data.weight !== '' && data.weight !== null ? parseFloat(String(data.weight)) : null;
+    if (data.primaryGoal !== undefined) profileData.primaryGoal = data.primaryGoal || null;
     if (data.healthGoals !== undefined) profileData.healthGoals = data.healthGoals;
     if (data.medicalHistory !== undefined) profileData.medicalHistory = data.medicalHistory;
     if (data.currentMeds !== undefined) profileData.currentMeds = data.currentMeds;
