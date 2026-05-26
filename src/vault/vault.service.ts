@@ -6,6 +6,25 @@ import * as crypto from 'crypto';
 
 const BUCKET = 'vault';
 
+// Valid UploadCategory enum values — must match Prisma schema exactly
+const VALID_UPLOAD_CATEGORIES = new Set([
+  'bloodwork', 'mri', 'ct_scan', 'pet_scan', 'pathology', 'biopsy',
+  'genomics', 'microbiome', 'metabolomics', 'proteomics', 'epigenetics',
+  'imaging', 'ecg', 'sleep', 'nutrition', 'supplements', 'medications',
+  'symptoms', 'intake_form', 'insurance', 'protocols', 'prescriptions',
+  'appointments', 'other',
+]);
+function sanitizeCategory(category: string): string {
+  if (VALID_UPLOAD_CATEGORIES.has(category)) return category;
+  const legacyMap: Record<string, string> = {
+    labs: 'bloodwork', lab: 'bloodwork', pdf: 'other', photo: 'imaging',
+    image: 'imaging', photos: 'imaging', protocol: 'protocols',
+    prescription: 'prescriptions', appointment: 'appointments',
+    supplement: 'supplements', medication: 'medications', symptom: 'symptoms',
+  };
+  return legacyMap[category?.toLowerCase()] || 'other';
+}
+
 @Injectable()
 export class VaultService {
   private supabase: SupabaseClient;
@@ -65,6 +84,7 @@ export class VaultService {
     createdByRole?: string,
     createdByName?: string,
   ) {
+    const safeCategory = sanitizeCategory(category);
     const { data } = await this.supabase.storage.from(BUCKET).getPublicUrl(storageKey);
     const storageUrl = data.publicUrl;
     const sha256Hash = crypto.createHash('sha256').update(storageKey + Date.now()).digest('hex');
@@ -77,7 +97,7 @@ export class VaultService {
         originalName,
         mimeType,
         sizeBytes,
-        category: category as any,
+        category: safeCategory as any,
         storageKey,
         storageUrl,
         sha256Hash,
