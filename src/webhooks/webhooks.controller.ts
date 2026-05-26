@@ -47,10 +47,22 @@ export class WebhooksController {
       const email = data.email_addresses?.[0]?.email_address || '';
       const name = [data.first_name, data.last_name].filter(Boolean).join(' ') || null;
 
-      // ── Duplicate-account prevention ─────────────────────────────────────────
+      // ── UNIFIED ACCOUNT LINKAGE — Duplicate-account prevention ───────────────
+      // Rule: ONE person = ONE Ontogence identity.
+      //
       // If a user with this email already exists (created via a different Clerk
-      // identity), link the new Clerk ID to the existing record instead of
-      // creating a second row.
+      // identity, pre-created by a Stripe webhook stub, or from a previous
+      // sign-up attempt), link the new Clerk ID to the existing record instead
+      // of creating a second row.
+      //
+      // This applies to:
+      //   - Initial sign-ups after a prior Stripe purchase (stub user exists)
+      //   - OAuth sign-ins with a different provider on the same email
+      //   - Re-registrations after account deletion/recovery
+      //   - Any future authentication method added to the platform
+      //
+      // The existing user's ontId, stripeCustomerId, protocols, vault, purchases,
+      // audit history, and all linked data are preserved intact.
       const existingByEmail = await this.prisma.user.findUnique({ where: { email } });
 
       if (existingByEmail && existingByEmail.clerkId !== data.id) {
@@ -68,7 +80,12 @@ export class WebhooksController {
             id: uuidv4(),
             userId: existingByEmail.id,
             action: 'user_registered',
-            metadata: { email, note: 'Linked duplicate Clerk identity to existing account', newClerkId: data.id },
+            metadata: {
+              email,
+              note: 'Linked new Clerk identity to existing account (unified account linkage)',
+              newClerkId: data.id,
+              previousClerkId: existingByEmail.clerkId,
+            },
           },
         });
         return res.json({ received: true, merged: true });
@@ -107,7 +124,8 @@ export class WebhooksController {
 
       await this.prisma.user.updateMany({
         where: { clerkId: data.id },
-        // NOTE: ontId is intentionally excluded — it must never change after assignment
+        // NOTE: ontId and stripeCustomerId are intentionally excluded —
+        // they must never change after assignment (immutable identity fields)
         data: { email, name, avatarUrl: data.image_url || null, updatedAt: new Date() },
       });
     }

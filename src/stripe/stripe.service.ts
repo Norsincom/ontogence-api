@@ -66,6 +66,81 @@ export class StripeService {
   private readonly logger = new Logger(StripeService.name);
   constructor(private prisma: PrismaService) {}
 
+  /**
+   * UNIFIED ACCOUNT LINKAGE — findOrCreateStripeCustomer
+   *
+   * This is the single source of truth for Stripe customer identity.
+   * It guarantees one Stripe customer per email address, forever.
+   *
+   * Lookup priority:
+   *   1. DB: user.stripeCustomerId (fastest — already linked)
+   *   2. Stripe: customer list by email (catches pre-existing customers)
+   *   3. Create new Stripe customer and persist stripeCustomerId to DB
+   *
+   * This prevents:
+   *   - Guest checkouts (no customer object)
+   *   - Duplicate Stripe customers for the same email
+   *   - Returning users being classified as Guest
+   *   - Fragmented purchase histories across multiple customer records
+   */
+  private async findOrCreateStripeCustomer(
+    userId: string,
+    userEmail: string,
+    userName: string,
+  ): Promise<string> {
+    if (!stripe) throw new Error('Stripe is not configured');
+
+    // Step 1: Check if we already have a stripeCustomerId stored in the DB
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { stripeCustomerId: true, email: true, name: true },
+    });
+
+    if (user?.stripeCustomerId) {
+      this.logger.log(`[Stripe] Reusing existing stripeCustomerId=${user.stripeCustomerId} for userId=${userId}`);
+      return user.stripeCustomerId;
+    }
+
+    // Step 2: Search Stripe by email — catches customers created before this field existed
+    const emailToSearch = userEmail || user?.email || '';
+    if (emailToSearch) {
+      const existingCustomers = await stripe.customers.list({ email: emailToSearch, limit: 5 });
+      if (existingCustomers.data.length > 0) {
+        // Use the most recently created customer (first in list, Stripe returns newest first)
+        const existingCustomer = existingCustomers.data[0];
+        this.logger.log(`[Stripe] Found existing Stripe customer by email: id=${existingCustomer.id} email=${emailToSearch}`);
+
+        // Persist to DB so future lookups hit Step 1 (fast path)
+        await this.prisma.user.update({
+          where: { id: userId },
+          data: { stripeCustomerId: existingCustomer.id },
+        }).catch(err => this.logger.warn(`[Stripe] Failed to persist stripeCustomerId: ${err.message}`));
+
+        return existingCustomer.id;
+      }
+    }
+
+    // Step 3: No existing customer found — create one and persist
+    const newCustomer = await stripe.customers.create({
+      email: emailToSearch,
+      name: userName || user?.name || undefined,
+      metadata: {
+        ontogence_user_id: userId,
+        ont_id: '', // will be filled by webhook if needed
+      },
+    });
+
+    this.logger.log(`[Stripe] Created new Stripe customer: id=${newCustomer.id} email=${emailToSearch} userId=${userId}`);
+
+    // Persist stripeCustomerId to DB
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { stripeCustomerId: newCustomer.id },
+    }).catch(err => this.logger.warn(`[Stripe] Failed to persist new stripeCustomerId: ${err.message}`));
+
+    return newCustomer.id;
+  }
+
   /** Single-product checkout (legacy, kept for backwards compat) */
   async createCheckoutSession(
     userId: string,
@@ -78,7 +153,13 @@ export class StripeService {
     return this.createCartCheckoutSession(userId, userEmail, userName, [productKey], successUrl, cancelUrl);
   }
 
-  /** Multi-product cart checkout — accepts an array of product keys */
+  /**
+   * Multi-product cart checkout — accepts an array of product keys.
+   *
+   * ACCOUNT LINKAGE: Uses findOrCreateStripeCustomer() to ensure all purchases
+   * attach to the same Stripe customer record, regardless of product type or
+   * purchase history. No guest checkouts are possible.
+   */
   async createCartCheckoutSession(
     userId: string,
     userEmail: string,
@@ -89,6 +170,10 @@ export class StripeService {
   ) {
     if (!stripe) throw new Error('Stripe is not configured');
     if (!productKeys.length) throw new Error('At least one product is required');
+
+    // CRITICAL: Resolve the unified Stripe customer before creating any session.
+    // This is the enforcement point for the one-customer-per-user rule.
+    const stripeCustomerId = await this.findOrCreateStripeCustomer(userId, userEmail, userName);
 
     const hasVault = productKeys.includes('vaultAccess');
     const oneTimeKeys = productKeys.filter(k => !PRODUCTS[k].recurring) as ProductKey[];
@@ -103,7 +188,7 @@ export class StripeService {
       // Mixed cart: vault subscription must be a separate session
       const vaultSess = await stripe.checkout.sessions.create({
         mode: 'subscription',
-        customer_email: userEmail,
+        customer: stripeCustomerId,   // UNIFIED: attach to existing customer, never guest
         allow_promotion_codes: true,
         line_items: [{ price: PRODUCTS.vaultAccess.priceId, quantity: 1 }],
         client_reference_id: userId,
@@ -112,7 +197,7 @@ export class StripeService {
           customer_email: userEmail,
           customer_name: userName,
           products: 'vaultAccess',
-          has_vault: 'true',  // explicit — this session IS the vault
+          has_vault: 'true',
         },
         success_url: successUrl,
         cancel_url: cancelUrl,
@@ -121,8 +206,6 @@ export class StripeService {
     }
 
     // Determine mode for the primary session
-    // - subscription-only: vault alone (no one-time items)
-    // - payment: one-time items only (vault handled separately above)
     const isSubscriptionOnly = recurringKeys.length > 0 && oneTimeKeys.length === 0;
     const mode: Stripe.Checkout.SessionCreateParams.Mode = isSubscriptionOnly ? 'subscription' : 'payment';
 
@@ -137,17 +220,11 @@ export class StripeService {
           quantity: 1,
         }));
 
-    // CRITICAL: has_vault must be 'true' whenever this session will create a
-    // Vault subscription. Two cases:
-    //   1. Subscription-only session (vault purchased alone)
-    //   2. One-time-only session that also included vault (vault split above, but
-    //      the one-time session should NOT claim vault — vault is in vaultSessionUrl)
-    // Therefore: has_vault='true' only for subscription-only sessions.
     const thisSessionHasVault = isSubscriptionOnly && recurringKeys.includes('vaultAccess');
 
     const session = await stripe.checkout.sessions.create({
       mode,
-      customer_email: userEmail,
+      customer: stripeCustomerId,   // UNIFIED: attach to existing customer, never guest
       allow_promotion_codes: true,
       line_items: lineItems,
       client_reference_id: userId,
@@ -166,10 +243,34 @@ export class StripeService {
   }
 
   async handleCheckoutComplete(session: Stripe.Checkout.Session) {
-    const userId = session.client_reference_id || session.metadata?.user_id;
+    // PRIMARY: resolve userId from client_reference_id or metadata
+    let userId = session.client_reference_id || session.metadata?.user_id;
+
+    // FALLBACK: if no userId in session, look up by email — handles legacy sessions
+    // and any edge case where client_reference_id was not set
     if (!userId) {
-      this.logger.warn('[Stripe] checkout.session.completed: no userId in client_reference_id or metadata');
+      const email = session.metadata?.customer_email || session.customer_email || '';
+      if (email) {
+        const userByEmail = await this.prisma.user.findUnique({ where: { email } }).catch(() => null);
+        if (userByEmail) {
+          userId = userByEmail.id;
+          this.logger.log(`[Stripe] Resolved userId=${userId} by email fallback for session=${session.id}`);
+        }
+      }
+    }
+
+    if (!userId) {
+      this.logger.warn('[Stripe] checkout.session.completed: no userId in client_reference_id, metadata, or email lookup');
       return;
+    }
+
+    // Persist stripeCustomerId to user record if we have it from the session
+    const sessionCustomerId = typeof session.customer === 'string' ? session.customer : (session.customer as any)?.id || null;
+    if (sessionCustomerId) {
+      await this.prisma.user.update({
+        where: { id: userId },
+        data: { stripeCustomerId: sessionCustomerId },
+      }).catch(err => this.logger.warn(`[Stripe] Failed to persist stripeCustomerId on checkout complete: ${err.message}`));
     }
 
     // RACE CONDITION GUARD: Ensure the user record exists before creating FK-dependent records.
@@ -178,27 +279,44 @@ export class StripeService {
     if (!userExists) {
       const email = session.metadata?.customer_email || session.customer_email || '';
       const name = session.metadata?.customer_name || '';
-      this.logger.warn(`[Stripe] User ${userId} not in DB — creating stub record from checkout metadata`);
-      try {
-        // Generate ONTID
-        const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-        let ontId = 'ONT-';
-        for (let i = 0; i < 8; i++) ontId += chars[Math.floor(Math.random() * chars.length)];
-        await this.prisma.user.create({
-          data: {
-            id: userId,
-            clerkId: userId,
-            email,
-            name,
-            role: 'client',
-            ontId,
-            onboardingDone: false,
-          },
-        });
-        this.logger.log(`[Stripe] Created stub user for ${userId} | email=${email} | ontId=${ontId}`);
-      } catch (createErr: any) {
-        // If unique constraint on email, user may have been created with different ID — log and continue
-        this.logger.error(`[Stripe] Failed to create stub user for ${userId}: ${createErr.message}`);
+
+      // Before creating a stub, check if a user with this email already exists
+      // (handles the case where the Clerk webhook created the user with a different ID)
+      if (email) {
+        const existingByEmail = await this.prisma.user.findUnique({ where: { email } }).catch(() => null);
+        if (existingByEmail) {
+          this.logger.log(`[Stripe] Found existing user by email for stub creation — using id=${existingByEmail.id}`);
+          userId = existingByEmail.id;
+          // Persist stripeCustomerId to the found user
+          if (sessionCustomerId) {
+            await this.prisma.user.update({
+              where: { id: existingByEmail.id },
+              data: { stripeCustomerId: sessionCustomerId },
+            }).catch(() => {});
+          }
+        } else {
+          this.logger.warn(`[Stripe] User ${userId} not in DB — creating stub record from checkout metadata`);
+          try {
+            const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+            let ontId = 'ONT-';
+            for (let i = 0; i < 8; i++) ontId += chars[Math.floor(Math.random() * chars.length)];
+            await this.prisma.user.create({
+              data: {
+                id: userId,
+                clerkId: userId,
+                email,
+                name,
+                role: 'client',
+                ontId,
+                stripeCustomerId: sessionCustomerId || undefined,
+                onboardingDone: false,
+              },
+            });
+            this.logger.log(`[Stripe] Created stub user for ${userId} | email=${email} | ontId=${ontId}`);
+          } catch (createErr: any) {
+            this.logger.error(`[Stripe] Failed to create stub user for ${userId}: ${createErr.message}`);
+          }
+        }
       }
     }
 
@@ -210,9 +328,6 @@ export class StripeService {
       : (session.payment_intent as any)?.id || null;
 
     const products = session.metadata?.products || session.metadata?.product || 'payment';
-    // has_vault is true if:
-    //   (a) explicitly set in metadata, OR
-    //   (b) this is a subscription-mode session (Stripe subscription sessions always create vault access)
     const hasVault = session.metadata?.has_vault === 'true' || session.mode === 'subscription';
 
     // Upsert invoice — stripeInvoiceId is unique, so duplicate webhooks are safe
@@ -240,8 +355,6 @@ export class StripeService {
 
       this.logger.log(`[Stripe] Activating vault for userId=${userId} stripeSubId=${stripeSubscriptionId}`);
 
-      // Upsert: if a subscription already exists for this Stripe sub ID, update it;
-      // otherwise create a new one. This handles duplicate webhook deliveries safely.
       const existingBySub = stripeSubscriptionId
         ? await this.prisma.subscription.findUnique({ where: { stripeSubscriptionId } }).catch(() => null)
         : null;
@@ -252,13 +365,13 @@ export class StripeService {
           data: { status: 'active', currentPeriodEnd: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) },
         });
       } else {
-        // Check for any existing active subscription for this user (dedup)
         const existingActive = await this.prisma.subscription.findFirst({ where: { userId, status: 'active' } });
         if (!existingActive) {
           await this.prisma.subscription.create({
             data: {
               id: uuidv4(),
               userId,
+              stripeCustomerId: sessionCustomerId || undefined,
               stripeSubscriptionId,
               stripePriceId: PRODUCTS.vaultAccess.priceId,
               status: 'active',
@@ -316,8 +429,7 @@ export class StripeService {
   /** Handle customer.subscription.updated / customer.subscription.deleted events */
   async handleSubscriptionUpdate(subscription: Stripe.Subscription) {
     const stripeSubscriptionId = subscription.id;
-    const stripeStatus = subscription.status; // 'active' | 'canceled' | 'past_due' | 'unpaid' | etc.
-
+    const stripeStatus = subscription.status;
     this.logger.log(`[Stripe] subscription event: id=${stripeSubscriptionId} status=${stripeStatus}`);
 
     const existing = await this.prisma.subscription.findUnique({ where: { stripeSubscriptionId } });
@@ -337,7 +449,6 @@ export class StripeService {
         cancelAtPeriodEnd: subscription.cancel_at_period_end ?? false,
       },
     });
-
     this.logger.log(`[Stripe] Updated local subscription ${existing.id} → status=${newStatus}`);
   }
 
@@ -348,13 +459,39 @@ export class StripeService {
 
   /**
    * Self-healing sync: reconcile a user's Stripe subscriptions with the local DB.
-   * Called on-demand from GET /stripe/sync (authenticated) — runs on every dashboard
-   * load after payment=success, and can be called manually by the user.
+   * Called on-demand from GET /stripe/sync (authenticated).
+   *
+   * ACCOUNT LINKAGE: Uses findOrCreateStripeCustomer() to ensure the user's
+   * stripeCustomerId is always persisted before syncing subscriptions.
    */
   async syncSubscriptionForUser(userId: string, userEmail: string) {
     if (!stripe) return { synced: false, reason: 'Stripe not configured' };
 
-    // Find Stripe customer by email
+    // Ensure stripeCustomerId is persisted for this user
+    let stripeCustomerId: string | null = null;
+    try {
+      const user = await this.prisma.user.findUnique({
+        where: { id: userId },
+        select: { stripeCustomerId: true, name: true },
+      });
+      if (user?.stripeCustomerId) {
+        stripeCustomerId = user.stripeCustomerId;
+      } else {
+        // Try to find by email in Stripe
+        const customers = await stripe.customers.list({ email: userEmail, limit: 5 });
+        if (customers.data.length > 0) {
+          stripeCustomerId = customers.data[0].id;
+          await this.prisma.user.update({
+            where: { id: userId },
+            data: { stripeCustomerId },
+          }).catch(() => {});
+        }
+      }
+    } catch (err: any) {
+      this.logger.warn(`[Stripe Sync] Customer lookup failed: ${err.message}`);
+    }
+
+    // Find Stripe customer by email (broad search across all customers)
     const customers = await stripe.customers.list({ email: userEmail, limit: 5 });
     if (!customers.data.length) {
       return { synced: false, reason: 'No Stripe customer found for this email' };
@@ -364,7 +501,6 @@ export class StripeService {
     for (const customer of customers.data) {
       const subs = await stripe.subscriptions.list({ customer: customer.id, status: 'active', limit: 5 });
       for (const sub of subs.data) {
-        // Check if we already have this subscription in DB
         const existing = await this.prisma.subscription.findUnique({ where: { stripeSubscriptionId: sub.id } }).catch(() => null);
         if (!existing) {
           this.logger.log(`[Stripe Sync] Creating missing subscription for userId=${userId} stripeSubId=${sub.id}`);
@@ -372,6 +508,7 @@ export class StripeService {
             data: {
               id: require('crypto').randomUUID(),
               userId,
+              stripeCustomerId: customer.id,
               stripeSubscriptionId: sub.id,
               stripePriceId: sub.items.data[0]?.price.id || '',
               status: 'active',
