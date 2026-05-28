@@ -83,6 +83,15 @@ export class StripeService {
    *   - Returning users being classified as Guest
    *   - Fragmented purchase histories across multiple customer records
    */
+  /**
+   * Public alias for findOrCreateStripeCustomer — called by the Clerk webhook
+   * on user.created to immediately provision a Stripe customer for every new
+   * ONTOGENCE user, preventing all future guest checkouts and duplicates.
+   */
+  async ensureStripeCustomer(userId: string, userEmail: string, userName: string): Promise<string> {
+    return this.findOrCreateStripeCustomer(userId, userEmail, userName);
+  }
+
   private async findOrCreateStripeCustomer(
     userId: string,
     userEmail: string,
@@ -121,12 +130,18 @@ export class StripeService {
     }
 
     // Step 3: No existing customer found — create one and persist
+    // Look up the user's ontId to include in Stripe metadata
+    const userRecord = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { ontId: true },
+    }).catch(() => null);
+
     const newCustomer = await stripe.customers.create({
       email: emailToSearch,
       name: userName || user?.name || undefined,
       metadata: {
         ontogence_user_id: userId,
-        ont_id: '', // will be filled by webhook if needed
+        ont_id: userRecord?.ontId || '',
       },
     });
 
@@ -243,11 +258,15 @@ export class StripeService {
   }
 
   async handleCheckoutComplete(session: Stripe.Checkout.Session) {
+    // Resolve Stripe customer ID early — needed for fallback user resolution
+    const sessionCustomerId = typeof session.customer === 'string'
+      ? session.customer
+      : (session.customer as any)?.id || null;
+
     // PRIMARY: resolve userId from client_reference_id or metadata
     let userId = session.client_reference_id || session.metadata?.user_id;
 
-    // FALLBACK: if no userId in session, look up by email — handles legacy sessions
-    // and any edge case where client_reference_id was not set
+    // FALLBACK 1: look up by email — handles legacy sessions and edge cases
     if (!userId) {
       const email = session.metadata?.customer_email || session.customer_email || '';
       if (email) {
@@ -259,13 +278,24 @@ export class StripeService {
       }
     }
 
+    // FALLBACK 2: look up by stripeCustomerId — covers Stripe Payment Links where
+    // client_reference_id is not set but a named customer object is attached
+    if (!userId && sessionCustomerId) {
+      const userByCustomer = await this.prisma.user.findFirst({
+        where: { stripeCustomerId: sessionCustomerId },
+      }).catch(() => null);
+      if (userByCustomer) {
+        userId = userByCustomer.id;
+        this.logger.log(`[Stripe] Resolved userId=${userId} by stripeCustomerId fallback for session=${session.id}`);
+      }
+    }
+
     if (!userId) {
       this.logger.warn('[Stripe] checkout.session.completed: no userId in client_reference_id, metadata, or email lookup');
       return;
     }
 
     // Persist stripeCustomerId to user record if we have it from the session
-    const sessionCustomerId = typeof session.customer === 'string' ? session.customer : (session.customer as any)?.id || null;
     if (sessionCustomerId) {
       await this.prisma.user.update({
         where: { id: userId },
