@@ -357,13 +357,48 @@ export class StripeService {
       ? session.payment_intent
       : (session.payment_intent as any)?.id || null;
 
-    const products = session.metadata?.products || session.metadata?.product || 'payment';
-    const hasVault = session.metadata?.has_vault === 'true' || session.mode === 'subscription';
+    // ── Fetch real Stripe line items for accurate description and vault detection ──
+    // NEVER use metadata.products — it may be stale or incorrect.
+    // Always use the actual line items from Stripe as the source of truth.
+    let lineItemNames: string[] = [];
+    let hasVaultLineItem = false;
+    try {
+      if (stripe) {
+        const lineItems = await stripe.checkout.sessions.listLineItems(session.id, {
+          expand: ['data.price.product'],
+          limit: 20,
+        });
+        for (const item of lineItems.data) {
+          const product = item.price?.product;
+          const name = (product && typeof product === 'object' && 'name' in product)
+            ? (product as any).name as string
+            : item.description || 'Service';
+          lineItemNames.push(name);
+          // Vault Access is only present if the actual line item is the vault product
+          if (item.price?.id === PRODUCTS.vaultAccess.priceId) {
+            hasVaultLineItem = true;
+          }
+        }
+        this.logger.log(`[Stripe] Line items for session=${session.id}: ${lineItemNames.join(', ')}`);
+      }
+    } catch (liErr: any) {
+      this.logger.warn(`[Stripe] Could not fetch line items for session=${session.id}: ${liErr.message}`);
+    }
+
+    // Fallback: if line items unavailable, use has_vault metadata flag only
+    const hasVault = hasVaultLineItem ||
+      (lineItemNames.length === 0 && session.metadata?.has_vault === 'true') ||
+      session.mode === 'subscription';
+
+    // Build human-readable description from real line item names
+    const invoiceDescription = lineItemNames.length > 0
+      ? lineItemNames.join(', ')
+      : (session.metadata?.has_vault === 'true' ? 'Vault Access' : 'Protocol');
 
     // Upsert invoice — stripeInvoiceId is unique, so duplicate webhooks are safe
     await this.prisma.invoice.upsert({
       where: { stripeInvoiceId: session.id },
-      update: { status: 'paid', paidAt: new Date() },
+      update: { status: 'paid', paidAt: new Date(), description: invoiceDescription },
       create: {
         id: uuidv4(),
         userId,
@@ -372,7 +407,7 @@ export class StripeService {
         amountCents,
         currency: session.currency || 'cad',
         status: 'paid',
-        description: products,
+        description: invoiceDescription,
         paidAt: new Date(),
       },
     });
@@ -421,7 +456,7 @@ export class StripeService {
         userId,
         action: 'payment_succeeded',
         resourceType: 'invoice',
-        metadata: { amount: amountCents, products },
+        metadata: { amount: amountCents, products: invoiceDescription },
       },
     });
 
@@ -431,7 +466,7 @@ export class StripeService {
         userId,
         eventType: 'payment',
         title: `Payment Received`,
-        description: `Payment of $${(amountCents / 100).toFixed(2)} CAD processed successfully for: ${products}.`,
+        description: `Payment of $${(amountCents / 100).toFixed(2)} CAD processed successfully for: ${invoiceDescription}.`,
         occurredAt: new Date(),
       },
     });

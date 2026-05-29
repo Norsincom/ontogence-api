@@ -25,15 +25,12 @@ export class UsersService {
     if (!user) throw new NotFoundException('User not found');
 
     // Super admins always have full vault access.
-    // Non-admins have vault access if they have an active subscription OR
-    // a paid one-time invoice that includes 'vaultAccess' in the description.
-    const hasVaultFromInvoice = user.invoices.some(
-      inv => inv.status === 'paid' && inv.description?.includes('vaultAccess'),
-    );
+    // Non-admins have vault access if they have an active subscription.
+    // One-time invoice purchases of the protocol do NOT grant vault access.
+    // Vault Access is a separate subscription product — never inferred from invoice descriptions.
     const hasVaultAccess =
       user.role === 'super_admin' ||
-      user.subscriptions.length > 0 ||
-      hasVaultFromInvoice;
+      user.subscriptions.length > 0;
     const purchasedServices = user.invoices
       .filter(inv => inv.status === 'paid')
       .map(inv => inv.description);
