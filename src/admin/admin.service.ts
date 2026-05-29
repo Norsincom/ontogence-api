@@ -156,9 +156,23 @@ export class AdminService {
             staff: { select: { id: true, name: true, email: true, role: true, ontId: true } },
           },
         },
+        subscriptions: {
+          orderBy: { createdAt: 'desc' },
+          include: {
+            invoices: { orderBy: { createdAt: 'desc' } },
+          },
+        },
+        invoices: {
+          orderBy: { createdAt: 'desc' },
+        },
       },
     });
     if (!user) throw new NotFoundException('User not found');
+
+    // Compute vault access from active subscriptions
+    const hasVaultAccess = (user as any).subscriptions?.some(
+      (s: any) => s.status === 'active' && !s.cancelAtPeriodEnd,
+    ) ?? false;
 
     // Fetch audit logs for this user
     const auditLogs = await this.prisma.auditLog.findMany({
@@ -168,7 +182,7 @@ export class AdminService {
       take: 200,
     });
 
-    return { ...user, auditLogs };
+    return { ...user, auditLogs, hasVaultAccess };
   }
 
   // ── Update client profile fields ──────────────────────────────────────────
