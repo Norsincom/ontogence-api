@@ -173,14 +173,12 @@ export class AdminService {
     });
     if (!user) throw new NotFoundException('User not found');
 
-    // Compute vault access: active subscription OR paid one-time vaultAccess invoice
-    const hasVaultFromSub = (user as any).subscriptions?.some(
+    // Compute vault access: active subscription ONLY.
+    // Protocol purchases (one-time invoices) do NOT grant vault access.
+    // Vault Access is a separate subscription product — never inferred from invoice descriptions.
+    const hasVaultAccess = (user as any).subscriptions?.some(
       (s: any) => s.status === 'active',
     ) ?? false;
-    const hasVaultFromInvoice = (user as any).invoices?.some(
-      (inv: any) => inv.status === 'paid' && inv.description?.includes('vaultAccess'),
-    ) ?? false;
-    const hasVaultAccess = hasVaultFromSub || hasVaultFromInvoice;
 
     // Fetch audit logs for this user
     const auditLogs = await this.prisma.auditLog.findMany({
