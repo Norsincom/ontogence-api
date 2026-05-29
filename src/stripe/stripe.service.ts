@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import Stripe from 'stripe';
 import { PrismaService } from '../prisma/prisma.service';
 import { v4 as uuidv4 } from 'uuid';
+import { formatProductLabel } from './product-labels';
 
 function createStripeClient(): Stripe | null {
   const key = process.env.STRIPE_SECRET_KEY;
@@ -390,10 +391,13 @@ export class StripeService {
       (lineItemNames.length === 0 && session.metadata?.has_vault === 'true') ||
       session.mode === 'subscription';
 
-    // Build human-readable description from real line item names
+    // Build human-readable description from real line item names.
+    // If line items are unavailable, fall back to mapping metadata.products through
+    // formatProductLabel() so internal keys are never stored raw in the DB.
     const invoiceDescription = lineItemNames.length > 0
       ? lineItemNames.join(', ')
-      : (session.metadata?.has_vault === 'true' ? 'Vault Access' : 'Protocol');
+      : formatProductLabel(session.metadata?.products ||
+          (session.metadata?.has_vault === 'true' ? 'vaultAccess' : 'protocol'));
 
     // Upsert invoice — stripeInvoiceId is unique, so duplicate webhooks are safe
     await this.prisma.invoice.upsert({
