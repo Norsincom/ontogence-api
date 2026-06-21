@@ -35,9 +35,9 @@ Email                   →  Resend
 | `CLERK_WEBHOOK_SECRET` | *(from Clerk Dashboard → Webhooks, after creating endpoint)* |
 | `STRIPE_SECRET_KEY` | `[STRIPE_SECRET_KEY - stored in Render env vars]` |
 | `STRIPE_WEBHOOK_SECRET` | *(from Stripe Dashboard → Developers → Webhooks)* |
-| `RESEND_API_KEY` | `re_F6B2Lgvg_8JmPxQcX727jq5kJpUurEsaR` |
+| `RESEND_API_KEY` | `[RESEND_API_KEY - stored in Render env vars]` |
 | `SUPABASE_URL` | `https://treeujtluzsfoktsrwlr.supabase.co` |
-| `SUPABASE_SERVICE_ROLE_KEY` | `eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRyZWV1anRsdXpzZm9rdHNyd2xyIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3ODI1NTAyMywiZXhwIjoyMDkzODMxMDIzfQ.moS0n4JLX8p7aC65Sd9otGjOOrTJnf8utn4ZYOXjfmg` |
+| `SUPABASE_SERVICE_ROLE_KEY` | `[SUPABASE_SERVICE_ROLE_KEY - stored in Render env vars]` |
 | `FRONTEND_URL` | `https://ontogence.com` |
 
 ---
